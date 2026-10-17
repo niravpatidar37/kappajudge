@@ -1,0 +1,71 @@
+[project]
+name = "judgecal"
+version = "0.1.0"
+description = "LLM-as-judge with human calibration: rubric judge, HelpSteer2 calibration, bias tests, CI release gate"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "httpx>=0.27",
+  "pydantic>=2.8",
+  "python-dotenv>=1.0",
+  "portalocker>=2.10",
+  "psycopg[binary]>=3.2",
+  "numpy>=1.26",
+  "scipy>=1.13",
+  "scikit-learn>=1.5",
+  "pandas>=2.2",
+  "pyarrow>=17",
+  "matplotlib>=3.9",
+  "streamlit>=1.39",
+  "deepeval>=3.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.7",
+  "mypy>=1.13",
+  "pandas-stubs",
+  "types-requests",
+  "bandit>=1.7.10",
+  "pip-audit>=2.7",
+]
+
+[project.scripts]
+judgecal = "judgecal.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/judgecal"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["S101", "S311", "RUF001", "RUF002", "RUF003"]  # S311: seeded sampling/bootstrap, not crypto
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B"]
+"scripts/*" = ["S603", "S607"]
+"src/judgecal/judge.py" = ["E501"]  # prompt templates: their exact text is hashed into the judge config
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+files = ["src/judgecal"]
+exclude = ["src/judgecal/deepeval_metric.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["live: needs GROQ_API_KEY (skipped otherwise)"]
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests"]

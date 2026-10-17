@@ -1,0 +1,15 @@
+.venv
+.git
+data/raw
+data/cache
+data/anchor_pool.jsonl
+logs
+tests
+infra
+.github
+.env
+.env.*
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
