@@ -60,6 +60,18 @@ def calibration() -> dict[str, Any]:
             h = [sample[r["item_id"]]["human"][CRITERION_TO_HS2[c]] for r in rows]
             rep["criteria"][c] = agreement_report(j, h, 4)
         rep["mean_qwk"] = round(float(np.mean([rep["criteria"][c]["qwk"] for c in CRITERIA])), 4)
+        if rep["split"] == "dev":
+            keep = {r["item_id"] for r in read_jsonl(RES / "dev_subset_ids.jsonl")}
+            sub = [r for r in rows if r["item_id"] in keep]
+            rep["dev_subset"] = {"n_items": len(sub), "criteria": {}}
+            if len(sub) >= 10:
+                for c in CRITERIA:
+                    j = [r["scores"][c] for r in sub]
+                    h = [sample[r["item_id"]]["human"][CRITERION_TO_HS2[c]] for r in sub]
+                    rep["dev_subset"]["criteria"][c] = agreement_report(j, h, 4)
+                rep["dev_subset"]["mean_qwk"] = round(
+                    float(np.mean([rep["dev_subset"]["criteria"][c]["qwk"] for c in CRITERIA])), 4
+                )
         runs[path.stem] = rep
     ceiling: dict[str, Any] = {}
     for split in ("dev", "test"):
@@ -83,7 +95,8 @@ def _chart(runs: dict[str, Any], ceiling: dict[str, Any]) -> None:
         [
             r
             for r in runs.values()
-            if r["split"] == "dev" and r["order"] == "reason_first" and not r["variant"] and r["n_items"] >= 90
+            if r["split"] == "dev" and r["order"] == "reason_first" and not r["variant"]
+            and r.get("dev_subset", {}).get("criteria")
         ],
         key=lambda r: int(r["rubric"][1:]),
     )
@@ -93,7 +106,8 @@ def _chart(runs: dict[str, Any], ceiling: dict[str, Any]) -> None:
     fig, ax = plt.subplots(figsize=(7, 4.2))
     colors = {"correctness": "tab:blue", "completeness": "tab:orange", "coherence": "tab:green"}
     for c in CRITERIA:
-        ax.plot(xs, [r["criteria"][c]["qwk"] for r in dev], marker="o", color=colors[c], label=f"{c} (DEV)")
+        ax.plot(xs, [r["dev_subset"]["criteria"][c]["qwk"] for r in dev], marker="o", color=colors[c],
+                label=f"{c} (DEV n={dev[-1]['dev_subset']['n_items']})")
         test = [r for r in runs.values() if r["split"] == "test" and r["order"] == "reason_first" and not r["variant"]]
         for t in test:
             ax.scatter(

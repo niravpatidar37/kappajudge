@@ -64,7 +64,14 @@ jobs:
             echo "dir=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
             echo "Gate from the checked-out commit (push to main, or bootstrap PR)"
           fi
+          # Bootstrap only: before the first baseline is committed there is nothing to regress against.
+          # Once eval_runs/baseline.json exists on main, a missing or stale record fails this job.
+          if [ "$EVENT" != "pull_request" ] && [ ! -f eval_runs/baseline.json ]; then
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::No eval_runs/baseline.json yet (bootstrap); release gate not enforced on this push."
+          fi
       - name: Gate on committed evidence (hash of current prompt + no regression vs baseline)
+        if: steps.tree.outputs.bootstrap != 'true'
         working-directory: ${{ steps.tree.outputs.dir }}
         env:
           HEAD_DIR: ${{ github.workspace }}

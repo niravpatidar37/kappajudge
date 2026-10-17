@@ -32,7 +32,6 @@ def steps() -> list[tuple[str, set[str], list[str], dict[str, str]]]:
     r = _final_rubric()
     demo_env = {"JUDGECAL_ROOT": str(DEMO), "JUDGECAL_CACHE_DIR": str(ROOT / "data" / "cache")}
     return [
-        ("gate-baseline", {QWEN, GPTOSS}, [PY, "-m", "judgecal.evalrun"], {}),
         (
             "dev-subset",
             {QWEN},
@@ -48,6 +47,7 @@ def steps() -> list[tuple[str, set[str], list[str], dict[str, str]]]:
             ],
             {},
         ),
+        ("gate-baseline", {QWEN, GPTOSS}, [PY, "-m", "judgecal.evalrun"], {}),
         (
             "test",
             {QWEN},
