@@ -1,4 +1,4 @@
-# Cloud SQL for PostgreSQL 16: labels, labeling queue and eval-run history. Private IP only, TLS
+# Cloud SQL for PostgreSQL 16 (same major version as local compose and CI): labels, labeling queue and eval-run history. Private IP only, TLS
 # required, PITR backups. Labeling data is sensitive (owner judgments), so no public IP.
 #
 # Two built-in users with passwords generated here as *ephemeral* values and passed through
@@ -8,6 +8,9 @@
 #   judgecal_app:   the UI's runtime user; migration 0002 grants it only the DML it needs.
 
 resource "google_sql_database_instance" "pg" {
+  # checkov:skip=CKV_GCP_111:Statement text is deliberately not logged: rows carry labelers' notes (sensitive). pgaudit is on for audit events.
+  # checkov:skip=CKV_GCP_79:Major version pinned to 16 to match the version tested locally and in CI; upgrades are planned changes.
+  # checkov:skip=CKV_GCP_6:ssl_mode = ENCRYPTED_ONLY enforces TLS for every connection; client certificates are not used (password auth over private IP).
   project             = var.project_id
   name                = "${local.name}-pg"
   region              = var.region
@@ -65,6 +68,14 @@ resource "google_sql_database_instance" "pg" {
     }
     database_flags {
       name  = "log_disconnections"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_hostname"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_duration"
       value = "on"
     }
     database_flags {

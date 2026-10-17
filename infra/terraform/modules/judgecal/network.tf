@@ -39,3 +39,23 @@ resource "google_service_networking_connection" "psa" {
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.psa.name]
 }
+
+# Explicit firewall: deny all ingress into the VPC. Cloud Run reaches Cloud SQL via egress over the
+# PSA peering; nothing needs to connect into this network.
+resource "google_compute_firewall" "deny_all_ingress" {
+  project   = var.project_id
+  name      = "${local.name}-deny-all-ingress"
+  network   = google_compute_network.vpc.id
+  direction = "INGRESS"
+  priority  = 65534
+
+  deny {
+    protocol = "all"
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+
+  log_config {
+    metadata = "INCLUDE_ALL_METADATA"
+  }
+}
