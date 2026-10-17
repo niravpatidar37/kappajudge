@@ -76,7 +76,7 @@ def stratified_sample(cands: list[dict[str, Any]], per_level: int = 40, seed: in
     Then a grouped DEV/TEST split by prompt (both responses to one prompt land in the same half),
     stratified by helpfulness level.
     """
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - seeded sampling, not crypto
     by_level: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for c in cands:
         by_level[c["human"]["helpfulness"]].append(c)

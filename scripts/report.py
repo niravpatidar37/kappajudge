@@ -95,7 +95,9 @@ def _chart(runs: dict[str, Any], ceiling: dict[str, Any]) -> None:
         [
             r
             for r in runs.values()
-            if r["split"] == "dev" and r["order"] == "reason_first" and not r["variant"]
+            if r["split"] == "dev"
+            and r["order"] == "reason_first"
+            and not r["variant"]
             and r.get("dev_subset", {}).get("criteria")
         ],
         key=lambda r: int(r["rubric"][1:]),
@@ -106,8 +108,13 @@ def _chart(runs: dict[str, Any], ceiling: dict[str, Any]) -> None:
     fig, ax = plt.subplots(figsize=(7, 4.2))
     colors = {"correctness": "tab:blue", "completeness": "tab:orange", "coherence": "tab:green"}
     for c in CRITERIA:
-        ax.plot(xs, [r["dev_subset"]["criteria"][c]["qwk"] for r in dev], marker="o", color=colors[c],
-                label=f"{c} (DEV n={dev[-1]['dev_subset']['n_items']})")
+        ax.plot(
+            xs,
+            [r["dev_subset"]["criteria"][c]["qwk"] for r in dev],
+            marker="o",
+            color=colors[c],
+            label=f"{c} (DEV n={dev[-1]['dev_subset']['n_items']})",
+        )
         test = [r for r in runs.values() if r["split"] == "test" and r["order"] == "reason_first" and not r["variant"]]
         for t in test:
             ax.scatter(

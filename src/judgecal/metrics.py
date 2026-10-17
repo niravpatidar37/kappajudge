@@ -39,7 +39,7 @@ def within_one(a: Sequence[int], b: Sequence[int]) -> float:
 def bootstrap_ci(
     a: Sequence[int], b: Sequence[int], max_score: int, n: int = 1000, seed: int = 0, alpha: float = 0.05
 ) -> tuple[float, float]:
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - seeded bootstrap, not crypto
     idx = list(range(len(a)))
     vals: list[float] = []
     for _ in range(n):

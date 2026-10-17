@@ -25,7 +25,6 @@ COPY --chown=app:app rubrics ./rubrics
 COPY --chown=app:app prompts ./prompts
 COPY --chown=app:app data/p1_label_queue.jsonl data/p1_eval_set.json data/calibration_sample.jsonl ./data/
 COPY --chown=app:app results ./results
-COPY --chown=app:app eval_runs ./eval_runs
 COPY --chown=app:app judge_release.json gate_config.json ./
 USER app
 EXPOSE 8504
