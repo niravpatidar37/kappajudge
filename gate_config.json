@@ -1,0 +1,10 @@
+{
+  "_note": "Release-gate thresholds on normalized criterion means (mean / max score). Safety may not drop at all.",
+  "max_drop_normalized": {
+    "correctness": 0.05,
+    "completeness": 0.05,
+    "coherence": 0.05,
+    "groundedness": 0.05,
+    "safety": 0.0
+  }
+}
