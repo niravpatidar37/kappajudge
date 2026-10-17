@@ -1,0 +1,252 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.9.21"
+      - name: Install (locked)
+        run: uv sync --frozen --python 3.12
+      - name: Ruff
+        run: uv run --frozen ruff check . && uv run --frozen ruff format --check .
+      - name: Mypy (strict)
+        run: uv run --frozen mypy
+      - name: Pytest (no secrets; live-LLM tests skip; includes the DeepEval release-gate tests)
+        run: uv run --frozen pytest -p no:cacheprovider -q -rs
+
+  # Evidence-based release gate (no LLM secret in CI by design). On a PR, the gate code, thresholds,
+  # baseline and eval set come from the BASE commit, so a PR cannot weaken its own gate; only the PR's
+  # prompt file and its eval record are taken from the PR.
+  release-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.9.21"
+      - name: Select trusted gate tree
+        id: tree
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ] && git cat-file -e HEAD^1:src/judgecal/gate.py 2>/dev/null \
+             && git cat-file -e HEAD^1:eval_runs/baseline.json 2>/dev/null; then
+            git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
+            echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
+            echo "Gate code, thresholds, baseline and eval set from base commit $(git rev-parse HEAD^1)"
+          else
+            echo "dir=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
+            echo "Gate from the checked-out commit (push to main, or bootstrap PR)"
+          fi
+      - name: Gate on committed evidence (hash of current prompt + no regression vs baseline)
+        working-directory: ${{ steps.tree.outputs.dir }}
+        env:
+          HEAD_DIR: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.12 --no-dev
+          uv run --frozen --no-dev python -m judgecal.gate \
+            --record "$HEAD_DIR/eval_runs/latest.json" \
+            --prompt "$HEAD_DIR/prompts/rag_answer.md"
+
+  # Live gate: re-runs `make eval` with real models and gates the FRESH scores. This closes the
+  # forged-record risk of the evidence gate. Runs only if a GROQ_API_KEY repository secret exists
+  # (none is configured by design), so it is skipped and green otherwise.
+  live-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+      LLM_SPEND_LEDGER: ${{ github.workspace }}/.ci-ledger.jsonl
+      LLM_SPEND_CAP_USD: "1"
+    steps:
+      - name: Check for the secret
+        id: key
+        run: |
+          if [ -n "$GROQ_API_KEY" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else
+            echo "present=false" >> "$GITHUB_OUTPUT"; echo "No GROQ_API_KEY secret: live gate skipped."; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.key.outputs.present == 'true'
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: steps.key.outputs.present == 'true'
+        with:
+          version: "0.9.21"
+      - name: Fresh eval run + gate against the committed baseline
+        if: steps.key.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.12 --no-dev
+          uv run --frozen --no-dev python -m judgecal.evalrun --out "$RUNNER_TEMP/live"
+          uv run --frozen --no-dev python -m judgecal.gate --record "$RUNNER_TEMP/live/latest.json"
+
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.9.21"
+      - name: Install (locked)
+        run: uv sync --frozen --python 3.12
+      - name: pip-audit (locked runtime deps)
+        run: |
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt --no-hashes > "$RUNNER_TEMP/req.txt"
+          uv run --frozen pip-audit --strict --disable-pip --no-deps -r "$RUNNER_TEMP/req.txt"
+      - name: Bandit
+        run: uv run --frozen bandit -c pyproject.toml -r src -q
+      - name: Gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" \
+            zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
+            detect --source /repo -v --redact
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build -t judgecal:ci .
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress judgecal:ci
+
+  # Migrations, labeling store and /healthz + /readyz against a real Postgres service container.
+  # Throwaway credentials scoped to this job; no repository secrets are used.
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: judgecal
+          POSTGRES_DB: judgecal
+          POSTGRES_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U judgecal -d judgecal" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.9.21"
+      - name: Install (locked)
+        run: uv sync --frozen --python 3.12
+      - name: Migrate twice (idempotent), seed the labeling queue, integration tests, health endpoints
+        env:
+          PG_HOST: 127.0.0.1
+          PG_PORT: "5432"
+          PG_USER: judgecal
+          PG_DB: judgecal
+          POSTGRES_PASSWORD: ${{ env.CI_DB_PASSWORD }}
+          JUDGECAL_INTEGRATION: "1"
+          LLM_CALLS_ENABLED: "false"
+        run: |
+          set -euo pipefail
+          uv run --frozen python -m judgecal.cli migrate
+          uv run --frozen python -m judgecal.cli migrate
+          uv run --frozen python -m judgecal.cli seed-queue
+          uv run --frozen pytest -p no:cacheprovider -q -rs tests/test_db_integration.py
+          uv run --frozen uvicorn judgecal.asgi:app --host 127.0.0.1 --port 8504 > "$RUNNER_TEMP/uv.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8504/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8504/readyz
+          curl -fsS -o /dev/null http://127.0.0.1:8504/
+
+  terraform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.6"
+          terraform_wrapper: false
+      - name: terraform fmt -check
+        run: terraform -chdir=infra/terraform fmt -check -recursive -diff
+      - name: init (no backend) + validate, per environment
+        run: |
+          set -euo pipefail
+          for env in staging prod; do
+            terraform -chdir="infra/terraform/envs/${env}" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="infra/terraform/envs/${env}" validate -no-color
+          done
+
+  tflint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.64.0
+      - name: tflint (terraform recommended + google ruleset 0.40.0)
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # read-only token; avoids API rate limits when fetching the ruleset
+        run: |
+          set -euo pipefail
+          cfg="$GITHUB_WORKSPACE/infra/terraform/.tflint.hcl"
+          cd infra/terraform
+          tflint --init --config "$cfg"
+          tflint --recursive --config "$cfg" -f compact
+
+  iac-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkov (Terraform); every skip is justified inline in the .tf files
+        run: |
+          docker run --rm -v "$PWD/infra/terraform:/tf:ro" \
+            bridgecrew/checkov:3.3.29@sha256:3cc125b5337717b7303dbddd4e79374c120687b5ff6a24f9abdad56b562469f3 \
+            -d /tf --framework terraform --quiet --compact
