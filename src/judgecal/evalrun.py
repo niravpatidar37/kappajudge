@@ -104,7 +104,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "eval_runs")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--store", action="store_true", help="also insert the run into Postgres (DATABASE_URL)")
+    ap.add_argument("--gen-only", action="store_true", help="only generate (and cache) the SUT answers")
     args = ap.parse_args(argv)
+    if args.gen_only:
+        s = get_settings()
+        client = LLMClient(s.sut_provider, max_wait_s=120)
+        for it in load_eval_set()[: args.limit or None]:
+            answer, _ = generate(client, s.sut_model, it, args.prompt)
+            print(f"{it['question_id']}: {answer[:80]!r}", flush=True)
+        return 0
     record = run(args.prompt, limit=args.limit)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "history").mkdir(exist_ok=True)
