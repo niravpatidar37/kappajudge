@@ -1,0 +1,46 @@
+# Local stack. Run with: docker compose -p p4-judge up -d   (ports bound to 127.0.0.1 only)
+name: p4-judge
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: judgecal
+      POSTGRES_DB: judgecal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judgecal -d judgecal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    image: judgecal:local
+    command: ["python", "-m", "judgecal.cli", "migrate"]
+    environment:
+      DATABASE_URL: postgresql://judgecal:${POSTGRES_PASSWORD}@postgres:5432/judgecal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    image: judgecal:local
+    environment:
+      DATABASE_URL: postgresql://judgecal:${POSTGRES_PASSWORD}@postgres:5432/judgecal
+      LLM_CALLS_ENABLED: "false"   # the UI never calls models
+    ports:
+      - "127.0.0.1:8504:8504"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pg_data:
