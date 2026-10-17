@@ -64,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     ag = sub.add_parser("agreement", help="kappa of the judge vs the owner's labels + self-agreement")
     ag.add_argument("--judgments", type=Path, default=REPO_ROOT / "results" / "judgments" / "p1_answers.jsonl")
     ag.add_argument("--labeler", default=None)
+    sub.add_parser("import-calibration", help="store calibration iterations (QWK per criterion) as eval runs")
     sub.add_parser("gate", help="check the committed eval evidence against the baseline")
     args = ap.parse_args(argv)
 
@@ -83,6 +84,28 @@ def main(argv: list[str] | None = None) -> int:
             for p in paths:
                 db.insert_run(conn, json.loads(p.read_text(encoding="utf-8")), kind=args.kind)
             print(json.dumps({"imported": len(paths)}))
+        elif args.cmd == "import-calibration":
+            import time
+            import uuid
+
+            summ = json.loads((REPO_ROOT / "results" / "calibration_summary.json").read_text(encoding="utf-8"))
+            n = 0
+            for name, run in summ["runs"].items():
+                path = REPO_ROOT / run["file"]
+                created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(path.stat().st_mtime))
+                rec = {
+                    "run_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"judgecal-calibration/{name}")),
+                    "created_at": created,
+                    "judge_config": {"model": "qwen/qwen3.8-27b", "rubric_version": run["rubric"]},
+                    "summary": {c: {"qwk": v["qwk"], "n": v["n"]} for c, v in run["criteria"].items()},
+                    "items": [],
+                    "prompt_sha256": f"{run['split']}:{run['order']}",
+                    "usd": 0.0,
+                }
+                conn.execute("DELETE FROM eval_runs WHERE run_id = %s", (rec["run_id"],))  # refresh partial runs
+                db.insert_run(conn, rec, kind="calibration")
+                n += 1
+            print(json.dumps({"imported_calibration_runs": n}))
         elif args.cmd == "agreement":
             from judgecal.agreement import judge_vs_labels, self_agreement
             from judgecal.runs import read_jsonl

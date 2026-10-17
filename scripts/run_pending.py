@@ -97,6 +97,7 @@ def steps() -> list[tuple[str, set[str], list[str], dict[str, str]]]:
             {},
         ),
         ("length", {QWEN}, [PY, "scripts/bias_length.py", "--rubric", r], {}),
+        ("p1-answers", {QWEN}, [PY, "scripts/judge_p1_answers.py"], {}),
         ("position", {GPTOSS}, [PY, "scripts/bias_position.py", "--model", GPTOSS, "--n", "40"], {}),
         ("dev-rest", {QWEN}, [PY, "scripts/run_calibration.py", "--rubric", r, "--split", "dev"], {}),
     ]
