@@ -1,0 +1,273 @@
+{
+  "criterion_to_helpsteer2_attribute": {
+    "correctness": "correctness",
+    "completeness": "helpfulness",
+    "coherence": "coherence"
+  },
+  "runs": {
+    "calib_v1_dev_reason_first": {
+      "file": "results/judgments/calib_v1_dev_reason_first.jsonl",
+      "rubric": "v1",
+      "split": "dev",
+      "order": "reason_first",
+      "variant": "",
+      "n_items": 100,
+      "errors": 0,
+      "criteria": {
+        "correctness": {
+          "n": 100,
+          "qwk": 0.4194,
+          "spearman": 0.4214,
+          "exact": 0.3,
+          "within_1": 0.73,
+          "mean_judge": 2.4,
+          "mean_human": 2.05,
+          "qwk_ci95": [
+            0.2484,
+            0.5813
+          ]
+        },
+        "completeness": {
+          "n": 100,
+          "qwk": 0.4042,
+          "spearman": 0.4234,
+          "exact": 0.36,
+          "within_1": 0.7,
+          "mean_judge": 2.57,
+          "mean_human": 2.0,
+          "qwk_ci95": [
+            0.2248,
+            0.5624
+          ]
+        },
+        "coherence": {
+          "n": 100,
+          "qwk": 0.6026,
+          "spearman": 0.4986,
+          "exact": 0.55,
+          "within_1": 0.95,
+          "mean_judge": 3.71,
+          "mean_human": 3.32,
+          "qwk_ci95": [
+            0.3758,
+            0.7543
+          ]
+        }
+      },
+      "mean_qwk": 0.4754,
+      "dev_subset": {
+        "n_items": 30,
+        "criteria": {
+          "correctness": {
+            "n": 30,
+            "qwk": 0.3557,
+            "spearman": 0.3502,
+            "exact": 0.3333,
+            "within_1": 0.7,
+            "mean_judge": 2.5,
+            "mean_human": 2.033,
+            "qwk_ci95": [
+              0.0625,
+              0.676
+            ]
+          },
+          "completeness": {
+            "n": 30,
+            "qwk": 0.2013,
+            "spearman": 0.1787,
+            "exact": 0.2667,
+            "within_1": 0.6,
+            "mean_judge": 2.7,
+            "mean_human": 2.0,
+            "qwk_ci95": [
+              -0.1149,
+              0.5318
+            ]
+          },
+          "coherence": {
+            "n": 30,
+            "qwk": 0.5823,
+            "spearman": 0.4162,
+            "exact": 0.4667,
+            "within_1": 0.9333,
+            "mean_judge": 3.667,
+            "mean_human": 3.333,
+            "qwk_ci95": [
+              0.0,
+              0.7754
+            ]
+          }
+        },
+        "mean_qwk": 0.3798
+      }
+    },
+    "calib_v2_dev_reason_first": {
+      "file": "results/judgments/calib_v2_dev_reason_first.jsonl",
+      "rubric": "v2",
+      "split": "dev",
+      "order": "reason_first",
+      "variant": "",
+      "n_items": 68,
+      "errors": 0,
+      "criteria": {
+        "correctness": {
+          "n": 68,
+          "qwk": 0.314,
+          "spearman": 0.3464,
+          "exact": 0.3676,
+          "within_1": 0.7059,
+          "mean_judge": 1.824,
+          "mean_human": 1.353,
+          "qwk_ci95": [
+            0.0789,
+            0.524
+          ]
+        },
+        "completeness": {
+          "n": 68,
+          "qwk": 0.2416,
+          "spearman": 0.2888,
+          "exact": 0.3824,
+          "within_1": 0.6912,
+          "mean_judge": 1.912,
+          "mean_human": 1.294,
+          "qwk_ci95": [
+            0.0302,
+            0.4486
+          ]
+        },
+        "coherence": {
+          "n": 68,
+          "qwk": 0.5168,
+          "spearman": 0.5231,
+          "exact": 0.4706,
+          "within_1": 0.8676,
+          "mean_judge": 3.662,
+          "mean_human": 3.103,
+          "qwk_ci95": [
+            0.274,
+            0.6915
+          ]
+        }
+      },
+      "mean_qwk": 0.3575,
+      "dev_subset": {
+        "n_items": 26,
+        "criteria": {
+          "correctness": {
+            "n": 26,
+            "qwk": 0.2748,
+            "spearman": 0.2741,
+            "exact": 0.3077,
+            "within_1": 0.6538,
+            "mean_judge": 2.038,
+            "mean_human": 1.808,
+            "qwk_ci95": [
+              -0.0986,
+              0.643
+            ]
+          },
+          "completeness": {
+            "n": 26,
+            "qwk": 0.2025,
+            "spearman": 0.2136,
+            "exact": 0.3462,
+            "within_1": 0.6154,
+            "mean_judge": 2.346,
+            "mean_human": 1.769,
+            "qwk_ci95": [
+              -0.1625,
+              0.5701
+            ]
+          },
+          "coherence": {
+            "n": 26,
+            "qwk": 0.4554,
+            "spearman": 0.4797,
+            "exact": 0.4615,
+            "within_1": 0.8846,
+            "mean_judge": 3.769,
+            "mean_human": 3.269,
+            "qwk_ci95": [
+              0.0,
+              0.6609
+            ]
+          }
+        },
+        "mean_qwk": 0.3109
+      }
+    }
+  },
+  "human_ceiling": {
+    "dev": {
+      "correctness": {
+        "items": 100,
+        "pairwise_qwk_mean": 0.6289,
+        "pairwise_qwk_each": [
+          0.6191,
+          0.6078,
+          0.6598
+        ],
+        "leave_one_out_qwk": 0.6483,
+        "leave_one_out_spearman": 0.6571
+      },
+      "completeness": {
+        "items": 100,
+        "pairwise_qwk_mean": 0.62,
+        "pairwise_qwk_each": [
+          0.5832,
+          0.6209,
+          0.6559
+        ],
+        "leave_one_out_qwk": 0.6588,
+        "leave_one_out_spearman": 0.6702
+      },
+      "coherence": {
+        "items": 100,
+        "pairwise_qwk_mean": 0.1919,
+        "pairwise_qwk_each": [
+          0.1725,
+          0.3088,
+          0.0945
+        ],
+        "leave_one_out_qwk": 0.291,
+        "leave_one_out_spearman": 0.2001
+      }
+    },
+    "test": {
+      "correctness": {
+        "items": 100,
+        "pairwise_qwk_mean": 0.6218,
+        "pairwise_qwk_each": [
+          0.6578,
+          0.5865,
+          0.6212
+        ],
+        "leave_one_out_qwk": 0.6934,
+        "leave_one_out_spearman": 0.6973
+      },
+      "completeness": {
+        "items": 100,
+        "pairwise_qwk_mean": 0.5983,
+        "pairwise_qwk_each": [
+          0.6442,
+          0.581,
+          0.5697
+        ],
+        "leave_one_out_qwk": 0.6697,
+        "leave_one_out_spearman": 0.6755
+      },
+      "coherence": {
+        "items": 100,
+        "pairwise_qwk_mean": 0.3702,
+        "pairwise_qwk_each": [
+          0.5238,
+          0.3081,
+          0.2788
+        ],
+        "leave_one_out_qwk": 0.438,
+        "leave_one_out_spearman": 0.4716
+      }
+    }
+  }
+}

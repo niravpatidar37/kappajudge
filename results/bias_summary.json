@@ -1,0 +1,20 @@
+{
+  "position": {
+    "openai-gpt-oss-20b": {
+      "pairs": 14,
+      "flip_rate": 0.1429,
+      "flip_rate_ci95": [
+        0.0,
+        0.3571
+      ],
+      "first_slot_win_share_of_non_tie": 0.5185,
+      "agreement_with_human_per_judgment": 0.9286,
+      "agreement_with_human_consistent_only": 1.0,
+      "consistent_pairs": 12,
+      "longer_answer_wins_share_consistent": 0.9091
+    }
+  },
+  "self_preference": null,
+  "length": {},
+  "reason_vs_score_order": null
+}
