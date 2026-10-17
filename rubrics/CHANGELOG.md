@@ -42,3 +42,19 @@ Anchors: one per score point for correctness and completeness and three for cohe
 paraphrased from `data/anchor_pool.jsonl` (HelpSteer2 items whose prompts are not in DEV or TEST,
 annotator spread <= 1). The guide suggests 2-3 per point; one was used to stay inside the free-tier
 token quota (each anchor adds ~50 prompt tokens to every judge call).
+
+## Outcome: v1 kept as the release rubric (pre-declared rule: higher mean DEV-subset QWK)
+
+DEV subset, 6 items per human helpfulness level (n = 30, the same items for both rubrics;
+`results/dev_subset_ids.jsonl`). Values from `results/calibration_summary.json` (`dev_subset`):
+
+| | correctness | completeness | coherence | mean |
+|---|---:|---:|---:|---:|
+| v1 | 0.36 | 0.20 | 0.58 | 0.38 |
+| v2 | 0.31 | 0.22 | 0.45 | 0.33 |
+
+v2 lowered the judge's leniency on correctness and completeness (means closer to the human means) but
+did not improve rank agreement, and it lost on coherence. Two v2 rules backfired: "work out arithmetic
+yourself" (the judge re-derived a wrong total and accepted a wrong answer, `hs2-train-15036`) and the
+"underspecified -> clarifying question" exception, applied to clear requests (`hs2-train-01124`).
+A v3 that drops those two rules is the next iteration; not run (free-tier quota).
