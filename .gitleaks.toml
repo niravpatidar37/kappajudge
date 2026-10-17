@@ -1,0 +1,8 @@
+# Default gitleaks rules, plus one documented false positive: Terraform maps from env var name to
+# Secret Manager secret *id* (e.g. POSTGRES_PASSWORD = "pg-app-password") are not secret values.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Secret Manager secret ids referenced by name in Terraform"
+regexes = ['''pg-(app|owner)-password''']
