@@ -1,6 +1,6 @@
 # llm-judge-calibration
 
-An LLM judge (qwen3.8-27b, rubric v2) for Project 1's RAG answers, calibrated against real human
+An LLM judge (qwen3.8-27b, rubric v1) for Project 1's RAG answers, calibrated against real human
 ratings: **mean quadratic-weighted kappa not yet measured vs HelpSteer2 annotators on a held-out TEST
 split (n = 0)**, with position, length and self-preference bias measured and an
 evidence-based CI release gate that rejects a prompt regression.
@@ -26,7 +26,7 @@ The human ceiling uses HelpSteer2's per-annotator ratings (`disagreements/`) on 
 | completeness (helpfulness) | 0 | not yet measured | | | | 0.60 | 0.67 |
 | coherence (coherence) | 0 | not yet measured | | | | 0.37 | 0.44 |
 
-Raw: `results/judgments/calib_v2_test_reason_first.jsonl`, summary `results/calibration_summary.json`.
+Raw: `results/judgments/calib_v1_test_reason_first.jsonl`, summary `results/calibration_summary.json`.
 
 ### 2. Rubric iterations (tuned on DEV only)
 
@@ -36,8 +36,8 @@ Raw: `results/judgments/calib_v2_test_reason_first.jsonl`, summary `results/cali
 |---|---|---:|---:|---:|---:|---:|
 | v1 | DEV (all scored) | 100 | 0.42 | 0.40 | 0.60 | 0.48 |
 | v1 | DEV subset (6 per level) | 30 | 0.36 | 0.20 | 0.58 | 0.38 |
-| v2 | DEV (all scored) | 68 | 0.31 | 0.24 | 0.52 | 0.36 |
-| v2 | DEV subset (6 per level) | 26 | 0.27 | 0.20 | 0.46 | 0.31 |
+| v2 | DEV (all scored) | 72 | 0.35 | 0.27 | 0.52 | 0.38 |
+| v2 | DEV subset (6 per level) | 30 | 0.31 | 0.22 | 0.45 | 0.33 |
 
 v1 -> v2 is documented in `rubrics/CHANGELOG.md` (patterns found in the 20 largest DEV disagreements,
 `results/disagreements_v1_dev.md`). The DEV-subset rows compare both rubrics on the same items
@@ -63,11 +63,11 @@ not yet measured. Answers from both models are generated and committed (`results
 
 Correlational: not yet measured.
 
-Controlled perturbation: not yet measured (resume: `uv run python scripts/bias_length.py --rubric v2`).
+Controlled perturbation: not yet measured (resume: `uv run python scripts/bias_length.py --rubric v1`).
 
 **Reason-first vs score-first** (same rubric and items, only the JSON field order changes):
 
-not yet measured (resume: `uv run python scripts/run_calibration.py --rubric v2 --split dev --order score_first --ids-from results/order_experiment_ids.jsonl`).
+not yet measured (resume: `uv run python scripts/run_calibration.py --rubric v1 --split dev --order score_first --ids-from results/order_experiment_ids.jsonl`).
 
 ### 4. Release gate
 
@@ -196,7 +196,7 @@ OWASP Top 10 for LLM Applications (2025):
 
 ## Cost
 
-LLM spend for this project: **$0.3066** across 286 paid calls (qwen3.8-27b $0.2880, gpt-oss-20b $0.0186), read from the shared ledger at 2026-10-17T11:31:28Z. Groq calls are priced at Groq's published paid rates
+LLM spend for this project: **$0.3160** across 298 paid calls (qwen3.8-27b $0.2959, gpt-oss-20b $0.0201), read from the shared ledger at 2026-10-17T12:25:02Z. Groq calls are priced at Groq's published paid rates
 (`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
 estimate: `docs/SLO.md`.
 
