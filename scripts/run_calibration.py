@@ -10,6 +10,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -20,7 +21,7 @@ from judgecal.judge import Judge, JudgeItem  # noqa: E402
 from judgecal.llm import LLMClient, StructuredOutputError  # noqa: E402
 from judgecal.logjson import setup_logging  # noqa: E402
 from judgecal.rubric import load_rubric  # noqa: E402
-from judgecal.runs import append_jsonl, done_ids  # noqa: E402
+from judgecal.runs import append_jsonl, done_ids, run_resumable  # noqa: E402
 
 CRITERIA = list(CRITERION_TO_HS2)
 
@@ -48,6 +49,13 @@ def main() -> None:
 
         keep = {r["item_id"] for r in read_jsonl(Path(args.ids_from))}
         items = [i for i in items if i["item_id"] in keep]
+    # Round-robin by human helpfulness level, so a run cut short by a quota is still stratified.
+    by_level: dict[int, list[dict[str, Any]]] = {}
+    for it in items:
+        by_level.setdefault(it["human"]["helpfulness"], []).append(it)
+    items = [
+        lv[k] for k in range(max(map(len, by_level.values()), default=0)) for lv in by_level.values() if k < len(lv)
+    ]
     if args.limit:
         items = items[: args.limit]
     tag = f"calib_{args.rubric}_{args.split}_{args.order}" + (f"_{args.salt}" if args.salt else "")
@@ -95,4 +103,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_resumable(main)

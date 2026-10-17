@@ -48,6 +48,16 @@ class StructuredOutputError(LLMError):
     pass
 
 
+class QuotaExhausted(LLMError):
+    """Provider daily quota (tokens/requests per day) is exhausted: fail fast, checkpoint, resume later."""
+
+    def __init__(self, model: str, retry_after_s: float | None) -> None:
+        self.model = model
+        self.retry_after_s = retry_after_s
+        hint = f" (provider suggests retrying in ~{retry_after_s:.0f}s)" if retry_after_s else ""
+        super().__init__(f"daily quota exhausted for {model}{hint}; resume later")
+
+
 class ProviderJSONError(LLMError):
     """Provider-side schema validation failed (Groq 400 json_validate_failed); retryable as a bad sample."""
 
@@ -240,6 +250,11 @@ class LLMClient:
                 time.sleep(delay + random.uniform(0, 1))  # nosec B311 - jitter, not crypto
                 delay = min(delay * 2, 60)
                 continue
+            if r.status_code == 429 and is_daily_quota(r.text):
+                # Daily (TPD/RPD) quota: waiting minutes per call only burns wall time. Fail fast; the
+                # experiment scripts checkpoint every finished item and are resumed later.
+                retry = parse_retry_after(r.headers.get("retry-after"), r.text)
+                raise QuotaExhausted(str(body.get("model", "")), retry)
             if r.status_code == 429 or r.status_code >= 500:
                 if attempt == self.max_retries:
                     raise LLMError(f"HTTP {r.status_code} after {attempt} retries")
@@ -320,6 +335,11 @@ class LLMClient:
 
 
 _TRY_AGAIN = re.compile(r"try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?")
+
+
+def is_daily_quota(body: str) -> bool:
+    b = body.lower()
+    return "per day" in b or "(tpd)" in b or "(rpd)" in b
 
 
 def parse_retry_after(value: str | None, body: str = "") -> float | None:

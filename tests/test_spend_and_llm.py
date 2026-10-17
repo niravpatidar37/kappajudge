@@ -8,7 +8,7 @@ import pytest
 from pydantic import BaseModel
 
 from judgecal import llm as llm_mod
-from judgecal.llm import LLMClient, LLMDisabled, StructuredOutputError, parse_retry_after
+from judgecal.llm import LLMClient, LLMDisabled, QuotaExhausted, StructuredOutputError, parse_retry_after
 from judgecal.spend import BudgetExceeded, SpendLedger, price_for
 from tests.conftest import write_ledger
 
@@ -187,3 +187,25 @@ def test_claude_adapter_off_without_key(tmp_path: Path, ledger: SpendLedger, mon
     c = LLMClient("anthropic", ledger=ledger, cache_dir=tmp_path)
     with pytest.raises(Exception, match=r"ANTHROPIC_API_KEY|placeholder"):
         c.complete(MSG, "CLAUDE_MODEL_ID_PLACEHOLDER")
+
+
+def test_daily_quota_fails_fast_without_sleeping(
+    tmp_path: Path, ledger: SpendLedger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "test")
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: sleeps.append(s))
+    msg = (
+        "Rate limit reached for model `qwen/qwen3.8-27b` on tokens per day (TPD): Limit 200000, "
+        "Used 199800, Requested 1200. Please try again in 7m12s."
+    )
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429, json={"error": {"message": msg}}, headers={"retry-after": "432"})
+
+    c = LLMClient("groq", ledger=ledger, cache_dir=tmp_path, max_wait_s=1800, transport=httpx.MockTransport(handler))
+    with pytest.raises(QuotaExhausted) as ei:
+        c.complete(MSG, "qwen/qwen3.8-27b")
+    assert calls["n"] == 1 and sleeps == [] and ei.value.retry_after_s == 432

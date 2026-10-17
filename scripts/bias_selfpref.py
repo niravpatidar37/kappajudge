@@ -22,7 +22,7 @@ from judgecal.datasets import mtbench_pairs  # noqa: E402
 from judgecal.judge import PairwiseJudge  # noqa: E402
 from judgecal.llm import LLMClient, StructuredOutputError  # noqa: E402
 from judgecal.logjson import setup_logging  # noqa: E402
-from judgecal.runs import append_jsonl, done_ids, read_jsonl  # noqa: E402
+from judgecal.runs import append_jsonl, done_ids, read_jsonl, run_resumable  # noqa: E402
 
 MODELS = ("openai/gpt-oss-20b", "qwen/qwen3.8-27b")
 GEN_SYSTEM = "You are a helpful assistant. Answer the user's request well in at most 180 words."
@@ -109,4 +109,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_resumable(main)

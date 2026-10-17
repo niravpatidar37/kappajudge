@@ -3,8 +3,35 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from judgecal.llm import QuotaExhausted
+
+EXIT_QUOTA = 75  # EX_TEMPFAIL: resume later
+
+
+def run_resumable(main: Callable[[], None]) -> None:
+    """Run an experiment entrypoint; on a daily-quota 429, print a clear status and exit 75 (resume later)."""
+    try:
+        main()
+    except QuotaExhausted as exc:
+        cmd = " ".join(["python", *sys.argv])
+        print(
+            json.dumps(
+                {
+                    "status": "quota_exhausted",
+                    "model": exc.model,
+                    "retry_after_s": exc.retry_after_s,
+                    "resume": cmd,
+                    "note": "finished items are checkpointed; rerun the same command later",
+                }
+            ),
+            flush=True,
+        )
+        sys.exit(EXIT_QUOTA)
 
 
 def done_ids(path: Path, key: str = "item_id") -> set[str]:

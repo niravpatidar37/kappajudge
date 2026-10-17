@@ -1,6 +1,7 @@
 """Length bias, controlled: add neutral verbosity that changes no content, re-judge, compare.
 
-Items: 30 TEST items (6 per human helpfulness level). Padding: a fixed polite preamble and closing
+Items: 10 TEST items (2 per human helpfulness level; planned 30, reduced for the free-tier
+quota). Padding: a fixed polite preamble and closing
 (~290 chars) that adds no facts, no steps and no claims. Same judge config as the TEST run, so the
 original scores are the cached TEST judgments. Output: results/bias/length_perturb.jsonl (resumable).
 """
@@ -21,18 +22,22 @@ from judgecal.judge import Judge, JudgeItem  # noqa: E402
 from judgecal.llm import LLMClient, StructuredOutputError  # noqa: E402
 from judgecal.logjson import setup_logging  # noqa: E402
 from judgecal.rubric import load_rubric  # noqa: E402
-from judgecal.runs import append_jsonl, done_ids  # noqa: E402
+from judgecal.runs import append_jsonl, done_ids, read_jsonl, run_resumable  # noqa: E402
 
 PRE = "Thank you for your question. I have read your request carefully, and my response follows below.\n\n"
-POST = ("\n\nI hope this response is useful to you. If anything is unclear, or if you would like me to expand on "
-        "any part of it, please let me know.")
+POST = (
+    "\n\nI hope this response is useful to you. If anything is unclear, or if you would like me to expand on "
+    "any part of it, please let me know."
+)
 OUT = ROOT / "results" / "bias" / "length_perturb.jsonl"
 CRITERIA = list(CRITERION_TO_HS2)
 
 
-def pick(per_level: int = 6, seed: int = 9) -> list[dict[str, object]]:
+def pick(per_level: int = 2, seed: int = 9) -> list[dict[str, object]]:
+    """2 per helpfulness level from the measured TEST subset, so the original scores are cached."""
     rng = random.Random(seed)
-    test = load_sample("test")
+    keep = {r["item_id"] for r in read_jsonl(ROOT / "results" / "test_subset_ids.jsonl")}
+    test = [t for t in load_sample("test") if t["item_id"] in keep]
     out: list[dict[str, object]] = []
     for level in range(5):
         pool = sorted([t for t in test if t["human"]["helpfulness"] == level], key=lambda t: t["item_id"])
@@ -61,11 +66,20 @@ def main() -> None:
         except StructuredOutputError as exc:
             append_jsonl(OUT, {"item_id": iid, "error": str(exc)[:300]})
             continue
-        append_jsonl(OUT, {"item_id": iid, "rubric": args.rubric, "human_helpfulness": it["human"]["helpfulness"],  # type: ignore[index]
-                           "original_chars": len(orig), "padded_chars": len(padded),
-                           "scores_original": r0.scores, "scores_padded": r1.scores})
+        append_jsonl(
+            OUT,
+            {
+                "item_id": iid,
+                "rubric": args.rubric,
+                "human_helpfulness": it["human"]["helpfulness"],  # type: ignore[index]
+                "original_chars": len(orig),
+                "padded_chars": len(padded),
+                "scores_original": r0.scores,
+                "scores_padded": r1.scores,
+            },
+        )
         print(iid, r0.scores, r1.scores, flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    run_resumable(main)

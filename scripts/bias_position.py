@@ -21,7 +21,7 @@ from judgecal.datasets import mtbench_pairs  # noqa: E402
 from judgecal.judge import PairwiseJudge  # noqa: E402
 from judgecal.llm import LLMClient, StructuredOutputError  # noqa: E402
 from judgecal.logjson import setup_logging  # noqa: E402
-from judgecal.runs import append_jsonl, done_ids  # noqa: E402
+from judgecal.runs import append_jsonl, done_ids, run_resumable  # noqa: E402
 
 MAX_ANS = 1200
 
@@ -115,4 +115,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_resumable(main)

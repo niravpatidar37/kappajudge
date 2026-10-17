@@ -309,10 +309,12 @@ def order_effect() -> dict[str, Any] | None:
                 "mean_reason_first": round(float(np.mean(a)), 3),
                 "mean_score_first": round(float(np.mean(b)), 3),
             }
-        o["mean_qwk_reason_first"] = round(float(np.mean([v["reason_first_qwk_vs_human"]
-                                                           for v in o["criteria"].values()])), 4)
-        o["mean_qwk_score_first"] = round(float(np.mean([v["score_first_qwk_vs_human"]
-                                                          for v in o["criteria"].values()])), 4)
+        o["mean_qwk_reason_first"] = round(
+            float(np.mean([v["reason_first_qwk_vs_human"] for v in o["criteria"].values()])), 4
+        )
+        o["mean_qwk_score_first"] = round(
+            float(np.mean([v["score_first_qwk_vs_human"] for v in o["criteria"].values()])), 4
+        )
         out[rubric] = o
     return out or None
 
