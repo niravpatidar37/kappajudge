@@ -1,0 +1,30 @@
+{
+  "nvidia/HelpSteer2": {
+    "revision": "990b2711a36180dd19d9c94b8627844866f8982a",
+    "license": "cc-by-4.0",
+    "files": {
+      "train.jsonl.gz": {
+        "sha256": "c0d7e91d738d42e8a08070db26c4c09a9c7631308e1f0fd380ff43d130c9f713",
+        "bytes": 11315813
+      },
+      "validation.jsonl.gz": {
+        "sha256": "610eeb5289494d613c4c0f70aade2df8df0b499f3a24e76d232f74e6909d010a",
+        "bytes": 581833
+      },
+      "disagreements/disagreements.jsonl.gz": {
+        "sha256": "53435e0e2926620bf08ce91f278d7368ee6903f416a47764fe8839f3b71b3ab4",
+        "bytes": 13368757
+      }
+    }
+  },
+  "lmsys/mt_bench_human_judgments": {
+    "revision": "f7d2896d2cc5d80f8b55c2bbc722613555233c25",
+    "license": "cc-by-4.0",
+    "files": {
+      "data/human-00000-of-00001-25f4910818759289.parquet": {
+        "sha256": "4877bc46a40929f4082c3c79593700fb897b1d6c7f4c473032694a01322f5769",
+        "bytes": 738612
+      }
+    }
+  }
+}
