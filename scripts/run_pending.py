@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,10 +102,25 @@ def steps() -> list[tuple[str, set[str], list[str], dict[str, str]]]:
     ]
 
 
+def _run(cmd: list[str], extra_env: dict[str, str]) -> tuple[int, dict[str, object], str]:
+    proc = subprocess.run(cmd, cwd=ROOT, env={**os.environ, **extra_env}, capture_output=True, text=True)
+    last = ((proc.stdout or "").strip().splitlines() or [""])[-1]
+    info = json.loads(last) if proc.returncode == 75 and last.startswith("{") else {}
+    return proc.returncode, info, (proc.stderr or "")[-300:]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", nargs="*", default=None)
+    ap.add_argument(
+        "--patient-budget-s",
+        type=float,
+        default=0.0,
+        help="if > 0: when a step hits the daily quota with a short provider retry-after (<= 15 min), "
+        "sleep exactly that long and resume the same step, until this wall-clock budget is spent",
+    )
     args = ap.parse_args()
+    deadline = time.monotonic() + args.patient_budget_s
     exhausted: set[str] = set()
     status: dict[str, str] = {}
     for name, models, cmd, extra_env in steps():
@@ -116,19 +132,26 @@ def main() -> int:
         if models & exhausted:
             status[name] = f"skipped (quota exhausted: {sorted(models & exhausted)})"
             continue
-        env = {**os.environ, **extra_env}
-        proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
-        tail = (proc.stdout or "").strip().splitlines()[-1:] or [""]
-        if proc.returncode == 75:
-            info = json.loads(tail[0]) if tail[0].startswith("{") else {}
-            exhausted.add(str(info.get("model") or "") or next(iter(models)))
-            status[name] = f"quota exhausted ({info.get('model')}); resume: {' '.join(cmd)}"
-        elif proc.returncode != 0:
-            status[name] = f"failed rc={proc.returncode}: {(proc.stderr or '')[-300:]}"
-        else:
-            status[name] = "done"
-            if name == "gate-baseline" and not (ROOT / "eval_runs" / "baseline.json").is_file():
-                shutil.copyfile(ROOT / "eval_runs" / "latest.json", ROOT / "eval_runs" / "baseline.json")
+        while True:
+            rc, info, err = _run(cmd, extra_env)
+            if rc == 75:
+                retry = (
+                    float(info.get("retry_after_s") or 0) if isinstance(info.get("retry_after_s"), (int, float)) else 0
+                )
+                if args.patient_budget_s and 0 < retry <= 900 and time.monotonic() + retry < deadline:
+                    print(f"{name}: quota, sleeping {retry:.0f}s then resuming", flush=True)
+                    time.sleep(retry + 5)
+                    continue
+                exhausted.add(str(info.get("model") or "") or next(iter(models)))
+                status[name] = f"quota exhausted ({info.get('model')}); resume: {' '.join(cmd)}"
+            elif rc != 0:
+                status[name] = f"failed rc={rc}: {err}"
+            else:
+                status[name] = "done"
+                if name == "gate-baseline" and not (ROOT / "eval_runs" / "baseline.json").is_file():
+                    shutil.copyfile(ROOT / "eval_runs" / "latest.json", ROOT / "eval_runs" / "baseline.json")
+            print(f"{name}: {status[name]}", flush=True)
+            break
     print(json.dumps(status, indent=1))
     return 0
 
