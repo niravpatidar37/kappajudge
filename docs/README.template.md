@@ -2,8 +2,8 @@
 
 An LLM judge (qwen3.8-27b, rubric {FINAL}) for Project 1's RAG answers, calibrated against real human
 ratings: **mean quadratic-weighted kappa {{TEST_MEAN_QWK}} vs HelpSteer2 annotators on a held-out TEST
-split (n = {{TEST_N}})**, with position, length and self-preference bias measured and an
-evidence-based CI release gate that rejects a prompt regression.
+split (n = {{TEST_N}})**, with position and length bias measured (self-preference only partly: see the
+real n per table) and an evidence-based CI release gate that rejects a prompt regression.
 
 Every number below is rendered by `scripts/render_readme.py` from committed raw files in `results/`
 and `eval_runs/`. Experiments ran on the Groq free tier (about 200K tokens/day per model, shared with
@@ -208,8 +208,8 @@ Demo video: TODO (human): record 90 s. Shot list: (1) README results table and i
 the numbers.
 
 Resume line: *Built an LLM-as-judge evaluation pipeline calibrated against HelpSteer2 human ratings at
-mean quadratic-weighted kappa {{TEST_MEAN_QWK}} (TEST n = {{TEST_N}}); quantified position, length and
-self-preference bias and gated releases on it in CI.*
+mean quadratic-weighted kappa {{TEST_MEAN_QWK}} (TEST n = {{TEST_N}}); quantified position and length bias
+and gated prompt releases on it in CI.*
 
 ## Setup and run
 

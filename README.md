@@ -1,9 +1,9 @@
 # llm-judge-calibration
 
 An LLM judge (qwen3.8-27b, rubric v1) for Project 1's RAG answers, calibrated against real human
-ratings: **mean quadratic-weighted kappa not yet measured vs HelpSteer2 annotators on a held-out TEST
-split (n = 0)**, with position, length and self-preference bias measured and an
-evidence-based CI release gate that rejects a prompt regression.
+ratings: **mean quadratic-weighted kappa 0.49 vs HelpSteer2 annotators on a held-out TEST
+split (n = 40)**, with position and length bias measured (self-preference only partly: see the
+real n per table) and an evidence-based CI release gate that rejects a prompt regression.
 
 Every number below is rendered by `scripts/render_readme.py` from committed raw files in `results/`
 and `eval_runs/`. Experiments ran on the Groq free tier (about 200K tokens/day per model, shared with
@@ -22,9 +22,9 @@ The human ceiling uses HelpSteer2's per-annotator ratings (`disagreements/`) on 
 
 | Criterion (HelpSteer2 attribute) | n | Judge QWK [95% CI] | Spearman | Exact | Within 1 | Human pairwise QWK | Human leave-one-out QWK |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| correctness (correctness) | 0 | not yet measured | | | | 0.62 | 0.69 |
-| completeness (helpfulness) | 0 | not yet measured | | | | 0.60 | 0.67 |
-| coherence (coherence) | 0 | not yet measured | | | | 0.37 | 0.44 |
+| correctness (correctness) | 40 | **0.63** [0.41, 0.79] | 0.64 | 0.40 | 0.75 | 0.62 | 0.69 |
+| completeness (helpfulness) | 40 | **0.47** [0.17, 0.71] | 0.49 | 0.38 | 0.78 | 0.60 | 0.67 |
+| coherence (coherence) | 40 | **0.37** [-0.04, 0.65] | 0.30 | 0.45 | 0.80 | 0.37 | 0.44 |
 
 Raw: `results/judgments/calib_v1_test_reason_first.jsonl`, summary `results/calibration_summary.json`.
 
@@ -36,6 +36,7 @@ Raw: `results/judgments/calib_v1_test_reason_first.jsonl`, summary `results/cali
 |---|---|---:|---:|---:|---:|---:|
 | v1 | DEV (all scored) | 100 | 0.42 | 0.40 | 0.60 | 0.48 |
 | v1 | DEV subset (6 per level) | 30 | 0.36 | 0.20 | 0.58 | 0.38 |
+| v1 | TEST | 40 | 0.63 | 0.47 | 0.37 | 0.49 |
 | v2 | DEV (all scored) | 72 | 0.35 | 0.27 | 0.52 | 0.38 |
 | v2 | DEV subset (6 per level) | 30 | 0.31 | 0.22 | 0.45 | 0.33 |
 
@@ -49,25 +50,51 @@ v1 -> v2 is documented in `rubrics/CHANGELOG.md` (patterns found in the 20 large
 swapped). MT-bench pairs come from [lmsys/mt_bench_human_judgments](https://huggingface.co/datasets/lmsys/mt_bench_human_judgments)
 (turn 1, human majority verdict non-tie, both answers <= 1200 chars):
 
-| Judge | Pairs (both orders) | Flip rate [95% CI] | First-slot win share | Agreement with human (per judgment) | Longer answer wins (consistent verdicts) |
+| Judge | Pairs scored in both orders (planned) | Flip rate [95% CI] | First-slot win share | Agreement with human (per judgment) | Longer answer wins (consistent verdicts) |
 |---|---:|---:|---:|---:|---:|
-| openai-gpt-oss-20b (MT-bench) | 14 | **14%** [0%, 36%] | 52% | 93% | 91% |
+| openai/gpt-oss-20b (MT-bench) | 27 of 40 | **11%** [0%, 26%] | 53% | 91% | 74% |
+| openai/gpt-oss-20b (self-preference pairs) | 6 of 10 | 17% | | | |
+
+openai/gpt-oss-20b: n = 27 of 40 planned pairs; 12 pairs excluded (every attempt so far ended in 3 provider `json_validate_failed` rejections; retried on resume), 1 not attempted (daily quota). Excluding failed pairs can bias the rates if failures correlate with hard pairs. Resume: `uv run python scripts/bias_position.py --model openai/gpt-oss-20b --n 40`.
 
 **Self-preference** (both models answer the same MT-bench prompts; each model judges every pair in
 both orders; delta = how much more a judge prefers its own family's answer than the other judge does
 on the same pairs; ties count 0.5):
 
-not yet measured. Answers from both models are generated and committed (`results/bias/selfpref_answers.jsonl`); resume the judging with `uv run python scripts/bias_selfpref.py --stage judge --n 10`.
+| Judge | Pairs scored (planned) | Pairs failed | Own family win rate (judged by itself) | Same answers judged by the other model | Self-preference delta [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| openai/gpt-oss-20b | 6 of 10 | 4 | 58% | not yet measured | not yet measured |
+| qwen/qwen3.8-27b | 0 of 10 | 0 | not yet measured | not yet measured | not yet measured |
+
+Pairs judged by both judges: n = 0. The self-preference delta needs both judges on the same pairs, so it is not yet measured; the own-family win rate alone is not evidence of self-preference (the other family's answers may simply be worse). Resume: `uv run python scripts/bias_selfpref.py --stage judge --n 10` (qwen judge pending; failed pairs are retried on resume).
 
 **Length bias:**
 
-Correlational: not yet measured.
+Correlational (TEST, rubric v1, n = 40): Spearman of judge score vs response length inside each human score bucket, and of (judge - human) vs length:
 
-Controlled perturbation: not yet measured (resume: `uv run python scripts/bias_length.py --rubric v1`).
+| Criterion | n-weighted within-bucket rho | rho(judge - human, length) |
+|---|---:|---:|
+| correctness | -0.38 | -0.41 |
+| completeness | -0.02 | -0.03 |
+| coherence | 0.19 | 0.09 |
+
+Controlled (n = 10 TEST items, 2 per human level, reduced from a planned 30 for quota; +234 chars of neutral preamble/closing, content unchanged): mean score change padded - original:
+
+| Criterion | Mean delta [95% CI] | Share up | Share down |
+|---|---:|---:|---:|
+| correctness | **+0.00** [-0.30, +0.30] | 10% | 10% |
+| completeness | **-0.10** [-0.50, +0.30] | 20% | 30% |
+| coherence | **-0.10** [-0.30, +0.00] | 0% | 10% |
 
 **Reason-first vs score-first** (same rubric and items, only the JSON field order changes):
 
-not yet measured (resume: `uv run python scripts/run_calibration.py --rubric v1 --split dev --order score_first --ids-from results/order_experiment_ids.jsonl`).
+Rubric v1, n = 15 DEV items (planned 15), temperature 0:
+
+| Criterion | Reason-first QWK | Score-first QWK | Agreement between orders (QWK) | Same score |
+|---|---:|---:|---:|---:|
+| correctness | 0.49 | 0.30 | 0.85 | 93% |
+| completeness | 0.32 | 0.25 | 0.98 | 87% |
+| coherence | 0.66 | 0.66 | 1.00 | 100% |
 
 ### 4. Release gate
 
@@ -76,7 +103,15 @@ The system under test is the RAG answer prompt `prompts/rag_answer.md` (gpt-oss-
 questions across single/multi-hop, aggregation and out-of-scope, plus 1 synthetic prompt-injection item).
 The calibrated judge scores 5 criteria (correctness, completeness, coherence, groundedness, safety).
 
-not yet measured
+| Criterion | Baseline mean (normalized) | Allowed drop |
+|---|---:|---:|
+| correctness | 2.50 / 4 (0.62) | 0.05 |
+| completeness | 1.50 / 4 (0.38) | 0.05 |
+| coherence | 4.00 / 4 (1.00) | 0.05 |
+| groundedness | 3.00 / 4 (0.75) | 0.05 |
+| safety | 1.62 / 2 (0.81) | 0.00 |
+
+Baseline run `c3467568`, 8 items, $0.0152.
 
 Demo: a PR that weakens the prompt (drops citations, refusal and injection rules) with its honest eval
 record. Link and CI result: not yet measured
@@ -196,7 +231,7 @@ OWASP Top 10 for LLM Applications (2025):
 
 ## Cost
 
-LLM spend for this project: **$0.3160** across 298 paid calls (qwen3.8-27b $0.2959, gpt-oss-20b $0.0201), read from the shared ledger at 2026-10-17T12:25:02Z. Groq calls are priced at Groq's published paid rates
+LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T15:19:04Z. Groq calls are priced at Groq's published paid rates
 (`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
 estimate: `docs/SLO.md`.
 
@@ -221,8 +256,8 @@ Demo video: TODO (human): record 90 s. Shot list: (1) README results table and i
 the numbers.
 
 Resume line: *Built an LLM-as-judge evaluation pipeline calibrated against HelpSteer2 human ratings at
-mean quadratic-weighted kappa not yet measured (TEST n = 0); quantified position, length and
-self-preference bias and gated releases on it in CI.*
+mean quadratic-weighted kappa 0.49 (TEST n = 40); quantified position and length bias
+and gated prompt releases on it in CI.*
 
 ## Setup and run
 

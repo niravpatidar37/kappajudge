@@ -172,10 +172,16 @@ def _boot(vals: list[float], n: int = 2000, seed: int = 0) -> list[float]:
     return [round(means[int(0.025 * n)], 4), round(means[int(0.975 * n) - 1], 4)]
 
 
+POSITION_PLANNED_PAIRS = 40  # scripts/bias_position.py --n 40
+
+
 def position_summary(path: Path) -> dict[str, Any] | None:
-    rows = [r for r in read_jsonl(path) if "verdict_xy" in r]
+    all_rows = read_jsonl(path)
+    rows = [r for r in all_rows if "verdict_xy" in r]
     if not rows:
         return None
+    scored = {r["pair_id"] for r in rows}
+    failed = {r["pair_id"] for r in all_rows if "error" in r} - scored
     flips = [r["verdict_xy"] != r["verdict_yx"] for r in rows]
     first_slot = [s for r in rows for s in (r["slot_xy"], r["slot_yx"]) if s != "tie"]
     consistent = [r for r in rows if r["verdict_xy"] == r["verdict_yx"]]
@@ -187,6 +193,8 @@ def position_summary(path: Path) -> dict[str, Any] | None:
     ]
     return {
         "pairs": len(rows),
+        "planned_pairs": POSITION_PLANNED_PAIRS,
+        "failed_pairs_excluded": len(failed),
         "flip_rate": round(float(np.mean(flips)), 4),
         "flip_rate_ci95": _boot([float(f) for f in flips]),
         "first_slot_win_share_of_non_tie": round(float(np.mean([s == "A" for s in first_slot])), 4)
@@ -203,8 +211,17 @@ def position_summary(path: Path) -> dict[str, Any] | None:
     }
 
 
+SELFPREF_PLANNED_PAIRS = 10  # scripts/bias_selfpref.py --stage judge --n 10 (run_pending / gptoss_experiments.sh)
+
+
 def selfpref_summary() -> dict[str, Any] | None:
-    rows = [r for r in read_jsonl(RES / "bias" / "selfpref_verdicts.jsonl") if "winner_gptoss_first" in r]
+    """Per-judge numbers on the pairs each judge actually scored; the delta only on pairs scored by BOTH.
+
+    A judge with no scored pairs, or no pair scored by both judges, yields None for the affected numbers
+    (rendered as "not yet measured"); error rows (provider JSON validation failures) are counted, not scored.
+    """
+    all_rows = read_jsonl(RES / "bias" / "selfpref_verdicts.jsonl")
+    rows = [r for r in all_rows if "winner_gptoss_first" in r]
     if not rows:
         return None
     g, q = "openai/gpt-oss-20b", "qwen/qwen3.8-27b"
@@ -212,6 +229,10 @@ def selfpref_summary() -> dict[str, Any] | None:
     for r in rows:
         by_judge[r["judge"]][r["question_id"]] = r
     common = sorted(set(by_judge[g]) & set(by_judge[q]))
+    errors: dict[str, int] = defaultdict(int)
+    for r in all_rows:
+        if "error" in r and "key" in r:
+            errors[str(r["key"]).split("|", 1)[1]] += 1
 
     def share(r: dict[str, Any], fam: str) -> float:
         vals = [
@@ -219,24 +240,29 @@ def selfpref_summary() -> dict[str, Any] | None:
         ]
         return float(np.mean(vals))
 
-    out: dict[str, Any] = {"pairs_judged_by_both": len(common)}
+    out: dict[str, Any] = {"planned_pairs_per_judge": SELFPREF_PLANNED_PAIRS, "pairs_judged_by_both": len(common)}
     for judge, own, other in ((g, g, q), (q, q, g)):
-        own_by_self = [share(by_judge[judge][i], own) for i in common]
-        own_by_other = [share(by_judge[other][i], own) for i in common]
-        diffs = [a - b for a, b in zip(own_by_self, own_by_other, strict=True)]
-        flips = [by_judge[judge][i]["winner_gptoss_first"] != by_judge[judge][i]["winner_qwen_first"] for i in common]
-        out[judge] = {
-            "own_family_win_rate_by_self": round(float(np.mean(own_by_self)), 4),
-            "same_answers_win_rate_by_other_judge": round(float(np.mean(own_by_other)), 4),
-            "self_preference_delta": round(float(np.mean(diffs)), 4),
-            "self_preference_delta_ci95": _boot(diffs),
-            "position_flip_rate_on_these_pairs": round(float(np.mean(flips)), 4),
-        }
-    lens = [(by_judge[g][i]["len_gptoss"], by_judge[g][i]["len_qwen"]) for i in common]
-    out["mean_chars"] = {
-        "gpt-oss-20b": round(float(np.mean([a for a, _ in lens])), 1),
-        "qwen3.8-27b": round(float(np.mean([b for _, b in lens])), 1),
-    }
+        mine = sorted(by_judge[judge])
+        entry: dict[str, Any] = {"n_pairs": len(mine), "error_pairs": errors.get(judge, 0)}
+        if mine:
+            own_rate = float(np.mean([share(by_judge[judge][i], own) for i in mine]))
+            entry["own_family_win_rate_by_self"] = round(own_rate, 4)
+            flips = [by_judge[judge][i]["winner_gptoss_first"] != by_judge[judge][i]["winner_qwen_first"] for i in mine]
+            entry["position_flip_rate"] = round(float(np.mean(flips)), 4)
+            entry["mean_chars"] = {
+                "gpt-oss-20b": round(float(np.mean([by_judge[judge][i]["len_gptoss"] for i in mine])), 1),
+                "qwen3.8-27b": round(float(np.mean([by_judge[judge][i]["len_qwen"] for i in mine])), 1),
+            }
+        if common:
+            own_by_self = [share(by_judge[judge][i], own) for i in common]
+            own_by_other = [share(by_judge[other][i], own) for i in common]
+            diffs = [a - b for a, b in zip(own_by_self, own_by_other, strict=True)]
+            entry["same_answers_win_rate_by_other_judge"] = round(float(np.mean(own_by_other)), 4)
+            entry["self_preference_delta"] = round(float(np.mean(diffs)), 4)
+            entry["self_preference_delta_ci95"] = _boot(diffs)
+        else:
+            entry["self_preference_delta"] = None
+        out[judge] = entry
     return out
 
 

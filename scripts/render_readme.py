@@ -107,25 +107,38 @@ def position_table() -> str:
     if not pos:
         return NYM
     lines = [
-        "| Judge | Pairs (both orders) | Flip rate [95% CI] | First-slot win share | Agreement with human "
-        "(per judgment) | Longer answer wins (consistent verdicts) |",
+        "| Judge | Pairs scored in both orders (planned) | Flip rate [95% CI] | First-slot win share | Agreement with "
+        "human (per judgment) | Longer answer wins (consistent verdicts) |",
         "|---|---:|---:|---:|---:|---:|",
     ]
-    for judge, p in pos.items():
+    notes = []
+    for judge_key, p in pos.items():
+        judge = judge_key.replace("openai-", "openai/")
         ci = p["flip_rate_ci95"]
+        planned = p.get("planned_pairs")
+        failed = p.get("failed_pairs_excluded", 0)
         lines.append(
-            f"| {judge} (MT-bench) | {p['pairs']} | **{p['flip_rate']:.0%}** [{ci[0]:.0%}, {ci[1]:.0%}] | "
+            f"| {judge} (MT-bench) | {p['pairs']} of {planned} | **{p['flip_rate']:.0%}** [{ci[0]:.0%}, {ci[1]:.0%}] | "
             f"{_pct(p['first_slot_win_share_of_non_tie'])} | {_pct(p['agreement_with_human_per_judgment'])} | "
             f"{_pct(p['longer_answer_wins_share_consistent'])} |"
         )
+        missing = (planned or 0) - p["pairs"] - failed
+        notes.append(
+            f"{judge}: n = {p['pairs']} of {planned} planned pairs; {failed} pairs excluded "
+            "(every attempt so far ended in 3 provider `json_validate_failed` rejections; retried on resume), "
+            f"{max(missing, 0)} not attempted (daily quota). Excluding failed pairs can bias the rates if failures "
+            "correlate with hard pairs. Resume: "
+            f"`uv run python scripts/bias_position.py --model {judge} --n {planned}`."
+        )
     sp = BIAS.get("self_preference") or {}
     for judge in ("openai/gpt-oss-20b", "qwen/qwen3.8-27b"):
-        if judge in sp:
+        s = sp.get(judge) or {}
+        if s.get("n_pairs"):
             lines.append(
-                f"| {judge} (self-preference pairs) | {sp['pairs_judged_by_both']} | "
-                f"{sp[judge]['position_flip_rate_on_these_pairs']:.0%} | | | |"
+                f"| {judge} (self-preference pairs) | {s['n_pairs']} of {sp['planned_pairs_per_judge']} | "
+                f"{s['position_flip_rate']:.0%} | | | |"
             )
-    return "\n".join(lines)
+    return "\n".join(lines) + ("\n\n" + "\n".join(notes) if notes else "")
 
 
 def _pct(x: Any) -> str:
@@ -134,25 +147,37 @@ def _pct(x: Any) -> str:
 
 def selfpref_table() -> str:
     sp = BIAS.get("self_preference")
+    resume = "`uv run python scripts/bias_selfpref.py --stage judge --n 10`"
     if not sp:
         return (
             f"{NYM}. Answers from both models are generated and committed "
-            "(`results/bias/selfpref_answers.jsonl`); resume the judging with "
-            "`uv run python scripts/bias_selfpref.py --stage judge --n 10`."
+            f"(`results/bias/selfpref_answers.jsonl`); resume the judging with {resume}."
         )
     lines = [
-        "| Judge | Own family win rate (judged by itself) | Same answers judged by the other model | "
-        "Self-preference delta [95% CI] |",
-        "|---|---:|---:|---:|",
+        "| Judge | Pairs scored (planned) | Pairs failed | Own family win rate (judged by itself) | "
+        "Same answers judged by the other model | Self-preference delta [95% CI] |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for judge in ("openai/gpt-oss-20b", "qwen/qwen3.8-27b"):
-        s = sp[judge]
-        ci = s["self_preference_delta_ci95"]
-        lines.append(
-            f"| {judge} | {s['own_family_win_rate_by_self']:.0%} | {s['same_answers_win_rate_by_other_judge']:.0%}"
-            f" | **{s['self_preference_delta']:+.2f}** [{ci[0]:+.2f}, {ci[1]:+.2f}] |"
+        s = sp.get(judge) or {}
+        n = s.get("n_pairs", 0)
+        own = _pct(s.get("own_family_win_rate_by_self")) if n else NYM
+        other = _pct(s.get("same_answers_win_rate_by_other_judge"))
+        if s.get("self_preference_delta") is None:
+            delta = NYM
+        else:
+            ci = s["self_preference_delta_ci95"]
+            delta = f"**{s['self_preference_delta']:+.2f}** [{ci[0]:+.2f}, {ci[1]:+.2f}]"
+        planned, failed = sp["planned_pairs_per_judge"], s.get("error_pairs", 0)
+        lines.append(f"| {judge} | {n} of {planned} | {failed} | {own} | {other} | {delta} |")
+    note = f"\n\nPairs judged by both judges: n = {sp['pairs_judged_by_both']}."
+    if not sp["pairs_judged_by_both"]:
+        note += (
+            " The self-preference delta needs both judges on the same pairs, so it is not yet measured; the own-family"
+            " win rate alone is not evidence of self-preference (the other family's answers may simply be worse)."
+            f" Resume: {resume} (qwen judge pending; failed pairs are retried on resume)."
         )
-    return "\n".join(lines) + f"\n\nPairs judged by both judges: n = {sp['pairs_judged_by_both']} (planned 20)."
+    return "\n".join(lines) + note
 
 
 def length_section() -> str:
@@ -178,7 +203,8 @@ def length_section() -> str:
     out.append("")
     if pert:
         out.append(
-            f"Controlled (n = {pert['n']} TEST items, planned 30; +{pert['mean_added_chars']:.0f} chars of "
+            f"Controlled (n = {pert['n']} TEST items, 2 per human level, reduced from a planned 30 for quota; "
+            f"+{pert['mean_added_chars']:.0f} chars of "
             "neutral preamble/closing, content unchanged): mean score change padded - original:"
         )
         out.append("")
