@@ -1,0 +1,5 @@
+{
+  "url": "https://github.com/niravpatidar37/llm-judge-calibration/pull/1",
+  "ci_run": "https://github.com/niravpatidar37/llm-judge-calibration/actions/runs/39140467639",
+  "ci": "`release-gate` failed for the intended reason: regression vs baseline on correctness (normalized 0.2812 vs 0.6250, drop 0.3438 > 0.05) and groundedness (0.2812 vs 0.7500, drop 0.4688 > 0.05), with gate code and baseline loaded from the base commit; the other 8 jobs passed ([run 39140467639](https://github.com/niravpatidar37/llm-judge-calibration/actions/runs/39140467639)). Weakened-prompt record: `eval_runs/latest.json` on branch `demo/weakened-prompt` (run `81cd5936`)."
+}
