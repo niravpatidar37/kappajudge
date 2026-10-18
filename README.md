@@ -191,7 +191,7 @@ HelpSteer2 items.
 
 ### Cost
 
-LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T19:23:53Z. Groq calls are priced at Groq's published paid rates
+LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T19:53:46Z. Groq calls are priced at Groq's published paid rates
 (`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
 estimate: `docs/SLO.md`.
 
@@ -364,17 +364,6 @@ docs/                  RUNBOOK.md, SLO.md, README.template.md (this README's sou
 ```
 
 This README is rendered: edit `docs/README.template.md`, then run `uv run python scripts/render_readme.py`.
-
-## Part of a portfolio
-
-kappajudge is one of five connected projects:
-
-- [hopcite](https://github.com/niravpatidar37/hopcite): graph + vector RAG with citations. Its 128
-  benchmark answers fill the labeling queue here, and its cached retrieval contexts are the source of the
-  release-gate eval set.
-- [tracedresearch](https://github.com/niravpatidar37/tracedresearch): multi-agent research assistant.
-- [llmfailover](https://github.com/niravpatidar37/llmfailover): self-healing LLM gateway.
-- [distillroi](https://github.com/niravpatidar37/distillroi): model distillation pipeline.
 
 ## License
 

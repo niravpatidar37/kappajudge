@@ -317,17 +317,6 @@ docs/                  RUNBOOK.md, SLO.md, README.template.md (this README's sou
 
 This README is rendered: edit `docs/README.template.md`, then run `uv run python scripts/render_readme.py`.
 
-## Part of a portfolio
-
-kappajudge is one of five connected projects:
-
-- [hopcite](https://github.com/niravpatidar37/hopcite): graph + vector RAG with citations. Its 128
-  benchmark answers fill the labeling queue here, and its cached retrieval contexts are the source of the
-  release-gate eval set.
-- [tracedresearch](https://github.com/niravpatidar37/tracedresearch): multi-agent research assistant.
-- [llmfailover](https://github.com/niravpatidar37/llmfailover): self-healing LLM gateway.
-- [distillroi](https://github.com/niravpatidar37/distillroi): model distillation pipeline.
-
 ## License
 
 MIT, see [LICENSE](LICENSE). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Brand assets:
