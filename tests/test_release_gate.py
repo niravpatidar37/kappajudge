@@ -28,7 +28,8 @@ def _load(p: Path) -> dict[str, Any] | None:
 
 RECORD = _load(RECORD_PATH)
 BASELINE = _load(BASELINE_PATH)
-pytestmark = pytest.mark.skipif(BASELINE is None, reason="no baseline committed yet")
+# Enforcing: eval_runs/baseline.json is committed, so a missing baseline or record is a failure, not a skip.
+pytestmark = pytest.mark.release_gate
 
 
 def test_gate_evidence_fresh_and_no_regression() -> None:

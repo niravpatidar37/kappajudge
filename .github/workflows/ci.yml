@@ -32,8 +32,8 @@ jobs:
         run: uv run --frozen ruff check . && uv run --frozen ruff format --check .
       - name: Mypy (strict)
         run: uv run --frozen mypy
-      - name: Pytest (no secrets; live-LLM tests skip; includes the DeepEval release-gate tests)
-        run: uv run --frozen pytest -p no:cacheprovider -q -rs
+      - name: Pytest (no secrets; live-LLM tests skip; release-gate tests run in the release-gate job)
+        run: uv run --frozen pytest -p no:cacheprovider -q -rs -m "not release_gate"
 
   # Evidence-based release gate (no LLM secret in CI by design). On a PR, the gate code, thresholds,
   # baseline and eval set come from the BASE commit, so a PR cannot weaken its own gate; only the PR's
@@ -55,23 +55,22 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "pull_request" ] && git cat-file -e HEAD^1:src/judgecal/gate.py 2>/dev/null \
-             && git cat-file -e HEAD^1:eval_runs/baseline.json 2>/dev/null; then
+          # Enforcing: eval_runs/baseline.json is committed on main, so there is no bootstrap/skip path.
+          # On a PR the gate code, thresholds, baseline and eval set MUST come from the base commit;
+          # if the base lacks them the job fails rather than trusting the PR's own copies.
+          if [ "$EVENT" = "pull_request" ]; then
+            for f in src/judgecal/gate.py eval_runs/baseline.json gate_config.json; do
+              git cat-file -e "HEAD^1:$f" 2>/dev/null || { echo "::error::base commit lacks $f"; exit 1; }
+            done
             git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
             echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
             echo "Gate code, thresholds, baseline and eval set from base commit $(git rev-parse HEAD^1)"
           else
+            test -f eval_runs/baseline.json || { echo "::error::eval_runs/baseline.json missing"; exit 1; }
             echo "dir=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
-            echo "Gate from the checked-out commit (push to main, or bootstrap PR)"
-          fi
-          # Bootstrap only: before the first baseline is committed there is nothing to regress against.
-          # Once eval_runs/baseline.json exists on main, a missing or stale record fails this job.
-          if [ "$EVENT" != "pull_request" ] && [ ! -f eval_runs/baseline.json ]; then
-            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::No eval_runs/baseline.json yet (bootstrap); release gate not enforced on this push."
+            echo "Gate from the checked-out commit (push to main)"
           fi
       - name: Gate on committed evidence (hash of current prompt + no regression vs baseline)
-        if: steps.tree.outputs.bootstrap != 'true'
         working-directory: ${{ steps.tree.outputs.dir }}
         env:
           HEAD_DIR: ${{ github.workspace }}
@@ -81,6 +80,13 @@ jobs:
           uv run --frozen --no-dev python -m judgecal.gate \
             --record "$HEAD_DIR/eval_runs/latest.json" \
             --prompt "$HEAD_DIR/prompts/rag_answer.md"
+      - name: DeepEval release-gate tests (per-item safety may not drop; record fresh)
+        env:
+          DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.12
+          uv run --frozen pytest -p no:cacheprovider -q -rs -m release_gate
 
   # Live gate: re-runs `make eval` with real models and gates the FRESH scores. This closes the
   # forged-record risk of the evidence gate. Runs only if a GROQ_API_KEY repository secret exists

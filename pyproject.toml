@@ -66,7 +66,10 @@ exclude = ["src/judgecal/deepeval_metric.py"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
-markers = ["live: needs GROQ_API_KEY (skipped otherwise)"]
+markers = [
+  "live: needs GROQ_API_KEY (skipped otherwise)",
+  "release_gate: prompt release gate on committed eval evidence (CI job release-gate)",
+]
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests"]
