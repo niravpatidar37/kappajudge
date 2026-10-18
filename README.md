@@ -172,7 +172,7 @@ out-of-scope, plus 1 synthetic prompt-injection item). The calibrated judge scor
 Baseline run `c3467568`, 8 items, $0.0152.
 
 Demo: a PR that weakens the prompt (drops citations, refusal and injection rules) with its honest eval
-record, left open on purpose. Link and CI result: [https://github.com/niravpatidar37/llm-judge-calibration/pull/1](https://github.com/niravpatidar37/llm-judge-calibration/pull/1) (label `demo-regression`, left open). CI: `release-gate` failed for the intended reason: regression vs baseline on correctness (normalized 0.2812 vs 0.6250, drop 0.3438 > 0.05) and groundedness (0.2812 vs 0.7500, drop 0.4688 > 0.05), with gate code and baseline loaded from the base commit; the other 8 jobs passed ([run 39140467639](https://github.com/niravpatidar37/llm-judge-calibration/actions/runs/39140467639)). Weakened-prompt record: `eval_runs/latest.json` on branch `demo/weakened-prompt` (run `81cd5936`).
+record, left open on purpose. Link and CI result: [https://github.com/niravpatidar37/kappajudge/pull/1](https://github.com/niravpatidar37/kappajudge/pull/1) (label `demo-regression`, left open). CI: pending (CI run not recorded yet).
 
 ### 5. Labeling UI (human labels: TODO)
 
@@ -191,7 +191,7 @@ HelpSteer2 items.
 
 ### Cost
 
-LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T18:53:36Z. Groq calls are priced at Groq's published paid rates
+LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T19:23:53Z. Groq calls are priced at Groq's published paid rates
 (`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
 estimate: `docs/SLO.md`.
 
