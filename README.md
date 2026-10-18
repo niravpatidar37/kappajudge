@@ -1,17 +1,74 @@
-# llm-judge-calibration
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo-dark.svg">
+    <img alt="kappajudge" src="assets/brand/logo.svg" width="360">
+  </picture>
+</p>
 
-An LLM judge (qwen3.8-27b, rubric v1) for Project 1's RAG answers, calibrated against real human
-ratings: **mean quadratic-weighted kappa 0.49 vs HelpSteer2 annotators on a held-out TEST
-split (n = 40)**, with position and length bias measured (self-preference only partly: see the
-real n per table) and an evidence-based CI release gate that rejects a prompt regression.
+<p align="center">
+  <b>An LLM-as-a-judge that is measured against humans before it is trusted.</b><br>
+  Quadratic-weighted kappa vs human raters, position / length / self-preference bias tests, and a CI
+  release gate that blocks prompt regressions with no LLM key in CI.
+</p>
 
-Every number below is rendered by `scripts/render_readme.py` from committed raw files in `results/`
-and `eval_runs/`. Experiments ran on the Groq free tier (about 200K tokens/day per model, shared with
-other projects), so several sample sizes are smaller than planned; each table states the real n.
+<p align="center">
+  <img alt="Terminal recording: kappa_summary.py recomputes the judge's quadratic-weighted kappa against HelpSteer2 human ratings on the TEST split (mean 0.49 vs 0.53 human-vs-human) and prints the position and length bias numbers; the release gate passes on main's prompt; git diff shows a PR that strips the citation, refusal and injection rules from the RAG prompt; the PR's eval is replayed from the LLM cache with the kill switch on; the gate then fails with correctness and groundedness regressions and exit code 1." src="assets/demo/demo.gif" width="820">
+  <br><sub>A real session, $0 (cached judgments, kill switch on). <a href="assets/demo/README.md">How it was recorded</a>.</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/niravpatidar37/kappajudge/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/niravpatidar37/kappajudge/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
+</p>
+
+> **Status: working MVP, small samples.** The judge's TEST kappa rests on n = 40 items, the
+> human ceiling on 100. Groundedness and safety are not calibrated against humans yet (no human
+> labels for them), the self-preference delta is not yet measured, and nothing is deployed
+> (deploy-ready Terraform only). Every table states its real n. Read
+> [what did not work](#what-did-not-work) before reusing the numbers.
+
+## The problem
+
+Teams grade LLM output with another LLM because human review does not scale. But a judge is itself
+a model, with known failure modes:
+
+- **Position bias**: pairwise judges change their verdict when the two answers swap places
+  ([Wang et al., 2023](https://arxiv.org/abs/2305.17926); [Zheng et al., 2023](https://arxiv.org/abs/2306.05685)).
+- **Verbosity bias**: longer answers win even when they add nothing ([Zheng et al., 2023](https://arxiv.org/abs/2306.05685)).
+- **Self-preference**: a judge scores its own generations higher than humans do
+  ([Panickssery et al., 2024](https://arxiv.org/abs/2404.13076)).
+- **Unknown agreement**: "LLM-judged score 4.2" means nothing until you know how often the judge
+  agrees with people, and how often people agree with each other on the same items.
+
+Most eval pipelines report the judge's score and stop there. kappajudge reports the judge's
+**agreement with human raters**, next to the **human-vs-human ceiling**, then measures the judge's
+biases, and only then lets it gate a release.
+
+## What it does
+
+| | |
+|---|---|
+| **Calibrate** | A rubric judge (every score point defined, anchors from a disjoint pool, reasoning-first JSON) is scored against [HelpSteer2](https://arxiv.org/abs/2406.08673) human ratings with quadratic-weighted kappa, Spearman, exact and within-1 agreement, bootstrap CIs, on a held-out TEST split never used for tuning. |
+| **Human ceiling** | HelpSteer2's per-annotator ratings give annotator-vs-annotator (pairwise) and leave-one-out kappa on the same items, so the judge's kappa has a reference point. |
+| **Bias tests** | Position (MT-bench human pairs, both orders), length (correlational + a controlled padding perturbation), self-preference (two model families judging each other), and reason-first vs score-first output order. |
+| **Release gate** | `make eval` writes a run record pinned to the prompt file's SHA-256, the eval set and the judge config; CI (no LLM secret) re-checks the hashes, recomputes the summary and fails on any regression beyond the per-criterion threshold, loading gate code and baseline from the PR's **base** commit. |
+| **Labeling UI** | Streamlit on Postgres for the owner's own labels, blind double-labelling for self-agreement, an agreement page and an eval-trend page. |
+| **Guardrails** | Hard spend cap checked before every paid call, content-hash LLM cache, kill switch, daily-quota fail-fast, Pydantic-validated judge output, fenced untrusted text, PII-redacted JSON logs. |
 
 ## Results
 
+Every number in this section is rendered by `scripts/render_readme.py` from committed raw files in
+`results/` and `eval_runs/`. Experiments ran on the Groq free tier (about 200K tokens/day per model,
+shared with other projects), so several sample sizes are smaller than planned; each table states the
+real n.
+
 ### 1. Judge vs human agreement (TEST split, never used for tuning)
+
+**Headline: mean QWK 0.49 for the judge vs human ratings (n = 40), against a
+human-vs-human mean of 0.53 (pairwise) / 0.60 (leave-one-out) on all
+100 TEST items.** Per criterion, the judge is at the pairwise human level on correctness and
+coherence and below it on completeness; the CIs are wide at this n.
 
 Human gold standard: [nvidia/HelpSteer2](https://huggingface.co/datasets/nvidia/HelpSteer2) (CC-BY-4.0),
 200 single-turn items stratified 40 per human helpfulness level 0-4 (including broken responses),
@@ -99,9 +156,10 @@ Rubric v1, n = 15 DEV items (planned 15), temperature 0:
 ### 4. Release gate
 
 The system under test is the RAG answer prompt `prompts/rag_answer.md` (gpt-oss-20b) on a fixed
-8-item eval set built from Project 1's cached retrieval contexts (`data/p1_eval_set.json`: 7 benchmark
-questions across single/multi-hop, aggregation and out-of-scope, plus 1 synthetic prompt-injection item).
-The calibrated judge scores 5 criteria (correctness, completeness, coherence, groundedness, safety).
+8-item eval set built from [hopcite](https://github.com/niravpatidar37/hopcite)'s cached retrieval
+contexts (`data/p1_eval_set.json`: 7 benchmark questions across single/multi-hop, aggregation and
+out-of-scope, plus 1 synthetic prompt-injection item). The calibrated judge scores 5 criteria
+(correctness, completeness, coherence, groundedness, safety).
 
 | Criterion | Baseline mean (normalized) | Allowed drop |
 |---|---:|---:|
@@ -114,7 +172,7 @@ The calibrated judge scores 5 criteria (correctness, completeness, coherence, gr
 Baseline run `c3467568`, 8 items, $0.0152.
 
 Demo: a PR that weakens the prompt (drops citations, refusal and injection rules) with its honest eval
-record. Link and CI result: [https://github.com/niravpatidar37/llm-judge-calibration/pull/1](https://github.com/niravpatidar37/llm-judge-calibration/pull/1) (label `demo-regression`, left open). CI: `release-gate` failed for the intended reason: regression vs baseline on correctness (normalized 0.2812 vs 0.6250, drop 0.3438 > 0.05) and groundedness (0.2812 vs 0.7500, drop 0.4688 > 0.05), with gate code and baseline loaded from the base commit; the other 8 jobs passed ([run 39140467639](https://github.com/niravpatidar37/llm-judge-calibration/actions/runs/39140467639)). Weakened-prompt record: `eval_runs/latest.json` on branch `demo/weakened-prompt` (run `81cd5936`).
+record, left open on purpose. Link and CI result: [https://github.com/niravpatidar37/llm-judge-calibration/pull/1](https://github.com/niravpatidar37/llm-judge-calibration/pull/1) (label `demo-regression`, left open). CI: `release-gate` failed for the intended reason: regression vs baseline on correctness (normalized 0.2812 vs 0.6250, drop 0.3438 > 0.05) and groundedness (0.2812 vs 0.7500, drop 0.4688 > 0.05), with gate code and baseline loaded from the base commit; the other 8 jobs passed ([run 39140467639](https://github.com/niravpatidar37/llm-judge-calibration/actions/runs/39140467639)). Weakened-prompt record: `eval_runs/latest.json` on branch `demo/weakened-prompt` (run `81cd5936`).
 
 ### 5. Labeling UI (human labels: TODO)
 
@@ -124,12 +182,53 @@ Streamlit app on Postgres: input, output, reference, retrieved context and the r
 defined; a score per criterion plus a note; labeler id and server timestamp; a blind double-label mode
 (only items first labeled >= 20 h earlier, max 20) for self-agreement; an Agreement page (QWK of the
 judge vs the owner's labels, and pass-1 vs pass-2 self-agreement) and an Eval-trend page.
-The queue is pre-loaded with all 128 Project 1 answers (64 questions x hybrid/vector) and the 200
+The queue is pre-loaded with all 128 hopcite answers (64 questions x hybrid/vector) and the 200
 HelpSteer2 items.
 
 - **TODO (human): 200 labels + 20 double labels by the owner.** Nothing in this repo is a human label
   produced by the build agent. The agreement code is tested on synthetic fixtures
   (`tests/test_metrics_agreement.py`) and runs with `uv run judgecal agreement` once labels exist.
+
+### Cost
+
+LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T18:53:36Z. Groq calls are priced at Groq's published paid rates
+(`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
+estimate: `docs/SLO.md`.
+
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/). These steps need no API key and make no LLM calls:
+
+```bash
+git clone https://github.com/niravpatidar37/kappajudge && cd kappajudge
+uv sync --frozen --python 3.12
+uv run python assets/demo/kappa_summary.py    # judge-vs-human kappa + bias, recomputed from raw files
+make gate                                     # the release gate CI runs (exit 1 on regression)
+make test                                     # unit tests (live-LLM and DB-integration tests skip)
+```
+
+Full stack (local docker compose; Postgres + labeling UI) and the LLM experiments, which need a Groq
+key in the env file named by `PORTFOLIO_ENV_FILE` (see `.env.example`):
+
+```bash
+cp .env.example .env                                   # set POSTGRES_PASSWORD
+docker compose -p p4-judge up -d --build               # postgres 127.0.0.1:15433, migrate job, UI 127.0.0.1:8504
+DATABASE_URL=postgresql://judgecal:***@127.0.0.1:15433/judgecal uv run judgecal seed-queue
+curl -s http://127.0.0.1:8504/readyz
+
+# experiments (resumable; exit 75 = daily quota, rerun later)
+uv run python scripts/fetch_datasets.py && uv run python scripts/make_sample.py
+uv run python scripts/run_calibration.py --rubric v1 --split dev
+uv run python scripts/run_pending.py                   # remaining steps in priority order
+uv run python scripts/report.py all && uv run python scripts/render_readme.py
+
+# release gate
+make eval        # needs GROQ_API_KEY; writes eval_runs/latest.json (commit it with the prompt change)
+make gate        # what CI runs, no secrets
+docker compose -p p4-judge stop
+```
+
+The Python package keeps the project's working name, `judgecal`; the CLI is `uv run judgecal --help`.
 
 ## Architecture
 
@@ -138,7 +237,7 @@ flowchart LR
   subgraph data["Data (committed)"]
     HS2["HelpSteer2 200 items<br/>DEV 100 / TEST 100<br/>+ per-annotator ratings"]
     MTB["MT-bench human<br/>pairwise verdicts"]
-    P1["Project 1: 128 answers<br/>+ cached retrieval contexts"]
+    P1["hopcite: 128 answers<br/>+ cached retrieval contexts"]
   end
   subgraph judge["Judge (src/judgecal)"]
     R["rubrics/rubric_vN.json<br/>every point defined<br/>+ anchors (disjoint pool)"]
@@ -155,16 +254,13 @@ flowchart LR
   PG --> UI["Streamlit: label, double-label,<br/>agreement, trend"]
 ```
 
-Deployment shape (deploy-ready; not applied): Cloud Run service (Streamlit behind IAP) + Cloud Run
-Jobs (migrate, scheduled eval via Cloud Scheduler) + Cloud SQL Postgres (private IP) + Secret Manager.
-
 ## Design decisions (trade-offs)
 
 1. **Public human labels instead of agent labels.** The build agent is not a human, so the gold standard
    is HelpSteer2's annotators. Cost: HelpSteer2 rates helpfulness/correctness/coherence of general chat
    answers, not RAG groundedness or refusal safety. Three rubric criteria map to HelpSteer2 attributes
    (correctness -> correctness, completeness -> helpfulness, coherence -> coherence); groundedness and
-   safety stay uncalibrated until the owner labels Project 1 answers in the UI.
+   safety stay uncalibrated until the owner labels hopcite answers in the UI.
 2. **Evidence-based gate instead of LLM calls in CI.** CI holds no LLM secret. `make eval` writes a run
    record pinned to the prompt file's SHA-256 and the judge config; CI fails on a stale or missing record
    or a regression beyond thresholds (no criterion may drop more than 0.05 of its scale; safety may not
@@ -192,7 +288,7 @@ Jobs (migrate, scheduled eval via Cloud Scheduler) + Cloud SQL Postgres (private
 - gpt-oss-20b often failed Groq's server-side JSON-schema validation (`json_validate_failed`) on the
   pairwise schema; those items are retried and, if they fail 3 times, recorded as errors (excluded).
 
-## Security
+## Security model
 
 Threat model: model outputs (judge and SUT) and all dataset text are untrusted; labelers' notes are
 sensitive; a PR author may try to weaken the release gate.
@@ -210,11 +306,11 @@ sensitive; a PR author may try to weaken the release gate.
 | PII and keys redacted from JSON logs | `logjson.py` | `test_redacts_pii_and_keys` |
 | UI behind IAP; UI service account cannot call models or read the Groq key | `infra/terraform` | checkov, tflint |
 
-Residual risk: a forged eval record passes the evidence gate (closed only by the live gate); prompt
+**Residual risk:** a forged eval record passes the evidence gate (closed only by the live gate); prompt
 injection inside judged text can still bias a score (fencing is defence in depth); same-repo PR code
-runs on CI runners.
+runs on CI runners. Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
 
-OWASP Top 10 for LLM Applications (2025):
+<details><summary>OWASP Top 10 for LLM Applications (2025) mapping</summary>
 
 | Risk | Status |
 |---|---|
@@ -225,60 +321,62 @@ OWASP Top 10 for LLM Applications (2025):
 | LLM05 Improper output handling | Outputs validated by Pydantic, never executed or rendered as HTML |
 | LLM06 Excessive agency | No tools; the judge only returns scores |
 | LLM07 System prompt leakage | Prompts hold no secrets; the injection item tests leakage |
-| LLM08 Vector and embedding weaknesses | Not applicable (no retrieval here; P1 contexts are cached text) |
+| LLM08 Vector and embedding weaknesses | Not applicable (no retrieval here; hopcite contexts are cached text) |
 | LLM09 Misinformation | This repo measures it: calibrated judge, human ceiling, bias numbers |
 | LLM10 Unbounded consumption | Spend cap, kill switch, fail-fast on quota, bounded retries/timeouts |
 
-## Cost
-
-LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T15:28:46Z. Groq calls are priced at Groq's published paid rates
-(`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
-estimate: `docs/SLO.md`.
+</details>
 
 ## Deployment
 
-Status: **deploy-ready; not applied (no cloud account connected).** Terraform in `infra/terraform`
-(module + `envs/staging` / `envs/prod`): Cloud Run v2 service with IAP, autoscaling, probes on
-`/readyz` (startup) and `/healthz` (liveness), session affinity; Cloud Run Jobs for migrations and the
-scheduled eval (Cloud Scheduler); Cloud SQL Postgres 16 (private IP, TLS, PITR); Secret Manager
-(values never in Terraform state); Artifact Registry; dedicated least-privilege service accounts.
-CD: `.github/workflows/deploy.yml` (build -> push digest -> staging canary + smoke -> prod after manual
-approval, 10% canary, automatic rollback), skipped until the repo variables exist.
+Status: **deploy-ready; not applied (no cloud account connected).** Local docker compose is the only
+environment that has run. Terraform in `infra/terraform` (module + `envs/staging` / `envs/prod`):
+Cloud Run v2 service with IAP, autoscaling, probes on `/readyz` (startup) and `/healthz` (liveness),
+session affinity; Cloud Run Jobs for migrations and the scheduled eval (Cloud Scheduler); Cloud SQL
+Postgres 16 (private IP, TLS, PITR); Secret Manager (values never in Terraform state); Artifact
+Registry; dedicated least-privilege service accounts. CD: `.github/workflows/deploy.yml` (build ->
+push digest -> staging canary + smoke -> prod after manual approval, 10% canary, automatic rollback),
+skipped until the repo variables exist.
 
 - One-time bootstrap (WIF pool, deploy SA, repo variables `GCP_PROJECT_ID`, `GCP_REGION`,
-  `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `GCP_IAP_CLIENT_ID`): `docs/RUNBOOK.md`
-- Runbook (deploy, verify, rollback, rotate secrets, kill switch, incidents): `docs/RUNBOOK.md`
-- SLOs and monthly cost estimate: `docs/SLO.md`
+  `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `GCP_IAP_CLIENT_ID`): [docs/RUNBOOK.md](docs/RUNBOOK.md)
+- Runbook (deploy, verify, rollback, rotate secrets, kill switch, incidents): [docs/RUNBOOK.md](docs/RUNBOOK.md)
+- SLOs and monthly cost estimate: [docs/SLO.md](docs/SLO.md)
 
-Demo video: TODO (human): record 90 s. Shot list: (1) README results table and iteration curve,
-(2) `docker compose up` + `/readyz`, (3) labeling a Project 1 answer in the UI, (4) the demo PR's red
-`release-gate` check and its failure message, (5) `uv run python scripts/report.py all` regenerating
-the numbers.
+## Project layout
 
-Resume line: *Built an LLM-as-judge evaluation pipeline calibrated against HelpSteer2 human ratings at
-mean quadratic-weighted kappa 0.49 (TEST n = 40); quantified position and length bias
-and gated prompt releases on it in CI.*
-
-## Setup and run
-
-Local docker compose; requires Docker, [uv](https://docs.astral.sh/uv/) and a Groq key in the shared
-env file (`PORTFOLIO_ENV_FILE`, default `F:/.secrets/portfolio.env`) for any LLM step.
-
-```bash
-uv sync --frozen
-cp .env.example .env                                   # set POSTGRES_PASSWORD
-docker compose -p p4-judge up -d --build               # postgres 127.0.0.1:15433, migrate job, UI 127.0.0.1:8504
-DATABASE_URL=postgresql://judgecal:<pw>@127.0.0.1:15433/judgecal uv run judgecal seed-queue
-curl -s http://127.0.0.1:8504/readyz
-
-# experiments (resumable; exit 75 = daily quota, rerun later)
-uv run python scripts/fetch_datasets.py && uv run python scripts/make_sample.py
-uv run python scripts/run_calibration.py --rubric v1 --split dev
-uv run python scripts/run_pending.py                   # remaining steps in priority order
-uv run python scripts/report.py all && uv run python scripts/render_readme.py
-
-# release gate
-make eval        # needs GROQ_API_KEY; writes eval_runs/latest.json (commit it with the prompt change)
-make gate        # what CI runs, no secrets
-docker compose -p p4-judge stop
+```text
+src/judgecal/          judge, rubric, LLM client (cache, spend cap, kill switch), metrics, gate, eval run, CLI
+  webapp/              Streamlit labeling UI (/healthz and /readyz via asgi.py)
+rubrics/               rubric_v1.json (release), rubric_v2.json (negative result), CHANGELOG.md
+prompts/rag_answer.md  system-under-test prompt (its SHA-256 is pinned by the eval record)
+eval_runs/             baseline.json, latest.json, history/ (release-gate evidence)
+gate_config.json       per-criterion allowed drop
+judge_release.json     the judge config the gate uses
+data/                  HelpSteer2 sample, anchor pool, hopcite eval set + label queue, dataset manifest
+results/               raw judgments, bias runs, summaries, iteration curve, UI screenshot
+scripts/               experiments (resumable), report.py, render_readme.py
+migrations/            numbered SQL migrations
+infra/terraform/       Cloud Run / Cloud SQL / IAP module + staging and prod envs
+assets/brand/          logo, icons, social preview + tools/build_brand.py
+assets/demo/           demo.gif, demo.cast, record.py, frame.py, kappa_summary.py
+docs/                  RUNBOOK.md, SLO.md, README.template.md (this README's source)
 ```
+
+This README is rendered: edit `docs/README.template.md`, then run `uv run python scripts/render_readme.py`.
+
+## Part of a portfolio
+
+kappajudge is one of five connected projects:
+
+- [hopcite](https://github.com/niravpatidar37/hopcite): graph + vector RAG with citations. Its 128
+  benchmark answers fill the labeling queue here, and its cached retrieval contexts are the source of the
+  release-gate eval set.
+- [tracedresearch](https://github.com/niravpatidar37/tracedresearch): multi-agent research assistant.
+- [llmfailover](https://github.com/niravpatidar37/llmfailover): self-healing LLM gateway.
+- [distillroi](https://github.com/niravpatidar37/distillroi): model distillation pipeline.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Brand assets:
+[assets/brand/README.md](assets/brand/README.md).

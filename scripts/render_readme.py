@@ -74,6 +74,22 @@ def test_mean_qwk() -> str:
     return f"{t['mean_qwk']:.2f}" if t else NYM
 
 
+def _human_mean(key: str) -> str:
+    ceil = CAL["human_ceiling"].get("test", {})
+    vals = [ceil[c][key] for c in CRIT if c in ceil]
+    return f"{sum(vals) / len(vals):.2f}" if len(vals) == len(CRIT) else NYM
+
+
+def human_pairwise_mean() -> str:
+    """Mean over the 3 calibrated criteria of the annotator-vs-annotator QWK (all TEST items)."""
+    return _human_mean("pairwise_qwk_mean")
+
+
+def human_loo_mean() -> str:
+    """Mean over the 3 calibrated criteria of the leave-one-out human QWK (all TEST items)."""
+    return _human_mean("leave_one_out_qwk")
+
+
 def iteration_table() -> str:
     lines = [
         "| Rubric | Split | n | correctness QWK | completeness QWK | coherence QWK | mean |",
