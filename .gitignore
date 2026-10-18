@@ -20,3 +20,9 @@ wandb/
 *.tfplan
 .deepeval/
 .deepeval*
+
+# brand build cache (font archive is fetched + checksum-verified)
+assets/brand/tools/.cache/
+# demo recording scratch
+assets/demo/raw.gif
+.pr/
