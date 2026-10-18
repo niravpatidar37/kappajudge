@@ -7,7 +7,7 @@
 resource "google_service_account" "ui" {
   project      = var.project_id
   account_id   = "${local.name}-ui"
-  display_name = "llm-judge-calibration UI (${var.env})"
+  display_name = "kappajudge UI (${var.env})"
 
   depends_on = [google_project_service.apis]
 }
@@ -15,7 +15,7 @@ resource "google_service_account" "ui" {
 resource "google_service_account" "jobs" {
   project      = var.project_id
   account_id   = "${local.name}-jobs"
-  display_name = "llm-judge-calibration migrate + eval jobs (${var.env})"
+  display_name = "kappajudge migrate + eval jobs (${var.env})"
 
   depends_on = [google_project_service.apis]
 }
@@ -23,7 +23,7 @@ resource "google_service_account" "jobs" {
 resource "google_service_account" "scheduler" {
   project      = var.project_id
   account_id   = "${local.name}-sched"
-  display_name = "llm-judge-calibration eval scheduler (${var.env})"
+  display_name = "kappajudge eval scheduler (${var.env})"
 
   depends_on = [google_project_service.apis]
 }

@@ -2,6 +2,9 @@
 
   F:/kg-rag-enterprise/.venv/Scripts/python.exe scripts/export_p1.py --p1 F:/kg-rag-enterprise
 
+Project 1 is now published as niravpatidar37/hopcite. The "source" string below keeps the name it had
+when data/p1_eval_set.json was exported, so the eval-set hash pinned by the release gate stays stable.
+
 Writes (committed):
 - data/p1_label_queue.jsonl : all 128 P1 benchmark answers (64 questions x hybrid/vector) for labeling.
 - data/p1_eval_set.json     : fixed release-gate eval set (7 P1 questions + 1 synthetic injection), cached

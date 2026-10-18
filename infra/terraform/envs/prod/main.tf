@@ -3,7 +3,7 @@ provider "google" {
   region  = var.region
 
   default_labels = {
-    app = "llm-judge-calibration"
+    app = "kappajudge"
     env = "prod"
   }
 }

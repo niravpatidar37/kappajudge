@@ -2,7 +2,7 @@ locals {
   name = "judgecal-${var.env}"
   labels = merge(
     {
-      app        = "llm-judge-calibration"
+      app        = "kappajudge"
       env        = var.env
       managed-by = "terraform"
     },

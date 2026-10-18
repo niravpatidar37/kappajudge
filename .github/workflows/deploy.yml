@@ -48,7 +48,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          repo="${REGION}-docker.pkg.dev/${PROJECT}/judgecal/llm-judge-calibration"
+          repo="${REGION}-docker.pkg.dev/${PROJECT}/judgecal/kappajudge"
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
           docker build -t "${repo}:${SHA}" .
           docker push "${repo}:${SHA}"

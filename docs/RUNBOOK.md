@@ -14,15 +14,15 @@ gcloud config set project "$PROJECT"
 gcloud storage buckets create "gs://${PROJECT}-tfstate" --location="$REGION" --uniform-bucket-level-access
 gcloud storage buckets update "gs://${PROJECT}-tfstate" --versioning
 # 2. Deploy service account + Workload Identity Federation for GitHub Actions
-gcloud iam service-accounts create judgecal-deployer --display-name="GitHub deployer (llm-judge-calibration)"
+gcloud iam service-accounts create judgecal-deployer --display-name="GitHub deployer (kappajudge)"
 gcloud iam workload-identity-pools create github --location=global
 gcloud iam workload-identity-pools providers create-oidc github-oidc --location=global \
   --workload-identity-pool=github --issuer-uri="https://token.actions.githubusercontent.com" \
   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-  --attribute-condition="assertion.repository=='niravpatidar37/llm-judge-calibration'"
+  --attribute-condition="assertion.repository=='niravpatidar37/kappajudge'"
 gcloud iam service-accounts add-iam-policy-binding \
   "judgecal-deployer@${PROJECT}.iam.gserviceaccount.com" --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')/locations/global/workloadIdentityPools/github/attribute.repository/niravpatidar37/llm-judge-calibration"
+  --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')/locations/global/workloadIdentityPools/github/attribute.repository/niravpatidar37/kappajudge"
 # 3. IAP programmatic access for CI smoke tests: create an OAuth client (Web application) for
 #    programmatic access and allowlist it (https://cloud.google.com/iap/docs/sharing-oauth-clients#programmatic_access);
 #    its client id becomes the GCP_IAP_CLIENT_ID repo variable. Pass the deployer SA in iap_members.
@@ -47,7 +47,7 @@ terraform apply -var="project_id=$PROJECT" -var="deployer_service_account=judgec
 # add the Groq key (DB passwords are generated and written by Terraform, write-only)
 printf '%s' "$GROQ_API_KEY" | gcloud secrets versions add judgecal-ENV-groq-api-key --data-file=-
 # build + push one image, then the second apply creates Cloud Run service, jobs and scheduler
-terraform apply ... -var="deploy_services=true" -var="image=REGION-docker.pkg.dev/$PROJECT/judgecal/llm-judge-calibration@sha256:<digest>"
+terraform apply ... -var="deploy_services=true" -var="image=REGION-docker.pkg.dev/$PROJECT/judgecal/kappajudge@sha256:<digest>"
 gcloud run jobs execute judgecal-ENV-migrate --region "$REGION" --wait
 ```
 
