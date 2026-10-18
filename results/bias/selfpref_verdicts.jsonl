@@ -1,0 +1,10 @@
+{"key": "111|openai/gpt-oss-20b", "question_id": 111, "judge": "openai/gpt-oss-20b", "winner_gptoss_first": "openai/gpt-oss-20b", "winner_qwen_first": "qwen/qwen3.8-27b", "len_gptoss": 393, "len_qwen": 853}
+{"key": "109|openai/gpt-oss-20b", "question_id": 109, "judge": "openai/gpt-oss-20b", "winner_gptoss_first": "openai/gpt-oss-20b", "winner_qwen_first": "openai/gpt-oss-20b", "len_gptoss": 515, "len_qwen": 1471}
+{"key": "143|openai/gpt-oss-20b", "question_id": 143, "judge": "openai/gpt-oss-20b", "winner_gptoss_first": "openai/gpt-oss-20b", "winner_qwen_first": "openai/gpt-oss-20b", "len_gptoss": 924, "len_qwen": 1158}
+{"key": "123|openai/gpt-oss-20b", "question_id": 123, "judge": "openai/gpt-oss-20b", "winner_gptoss_first": "qwen/qwen3.8-27b", "winner_qwen_first": "qwen/qwen3.8-27b", "len_gptoss": 1066, "len_qwen": 1778}
+{"key": "153|openai/gpt-oss-20b", "error": "validation failed after 3 attempts: provider rejected output: json_validate_failed"}
+{"key": "154|openai/gpt-oss-20b", "error": "validation failed after 3 attempts: provider rejected output: json_validate_failed"}
+{"key": "160|openai/gpt-oss-20b", "error": "validation failed after 3 attempts: provider rejected output: json_validate_failed"}
+{"key": "150|openai/gpt-oss-20b", "question_id": 150, "judge": "openai/gpt-oss-20b", "winner_gptoss_first": "qwen/qwen3.8-27b", "winner_qwen_first": "qwen/qwen3.8-27b", "len_gptoss": 1096, "len_qwen": 1538}
+{"key": "115|openai/gpt-oss-20b", "error": "validation failed after 3 attempts: provider rejected output: json_validate_failed"}
+{"key": "141|openai/gpt-oss-20b", "question_id": 141, "judge": "openai/gpt-oss-20b", "winner_gptoss_first": "openai/gpt-oss-20b", "winner_qwen_first": "openai/gpt-oss-20b", "len_gptoss": 1358, "len_qwen": 1416}
