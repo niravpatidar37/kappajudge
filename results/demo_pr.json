@@ -1,5 +1,5 @@
 {
   "url": "https://github.com/niravpatidar37/kappajudge/pull/1",
-  "ci_run": "",
-  "ci": "pending (CI run not recorded yet)."
+  "ci_run": "https://github.com/niravpatidar37/kappajudge/actions/runs/39164579550",
+  "ci": "release-gate FAILED on the PR head (f5350bd) as intended: correctness 0.2812 vs baseline 0.6250 (drop 0.3438 > 0.05) and groundedness 0.2812 vs 0.7500 (drop 0.4688 > 0.05); the other 8 jobs passed. Run triggered by workflow_dispatch on the PR branch because GitHub Actions is not creating runs for push/pull_request events on this repo yet."
 }

@@ -172,7 +172,7 @@ out-of-scope, plus 1 synthetic prompt-injection item). The calibrated judge scor
 Baseline run `c3467568`, 8 items, $0.0152.
 
 Demo: a PR that weakens the prompt (drops citations, refusal and injection rules) with its honest eval
-record, left open on purpose. Link and CI result: [https://github.com/niravpatidar37/kappajudge/pull/1](https://github.com/niravpatidar37/kappajudge/pull/1) (label `demo-regression`, left open). CI: pending (CI run not recorded yet).
+record, left open on purpose. Link and CI result: [https://github.com/niravpatidar37/kappajudge/pull/1](https://github.com/niravpatidar37/kappajudge/pull/1) (label `demo-regression`, left open). CI: release-gate FAILED on the PR head (f5350bd) as intended: correctness 0.2812 vs baseline 0.6250 (drop 0.3438 > 0.05) and groundedness 0.2812 vs 0.7500 (drop 0.4688 > 0.05); the other 8 jobs passed. Run triggered by workflow_dispatch on the PR branch because GitHub Actions is not creating runs for push/pull_request events on this repo yet.
 
 ### 5. Labeling UI (human labels: TODO)
 
@@ -191,7 +191,7 @@ HelpSteer2 items.
 
 ### Cost
 
-LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T19:53:46Z. Groq calls are priced at Groq's published paid rates
+LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-18T20:44:59Z. Groq calls are priced at Groq's published paid rates
 (`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
 estimate: `docs/SLO.md`.
 
