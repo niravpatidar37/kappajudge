@@ -88,3 +88,15 @@ variable "kill_switch" {
   type        = bool
   default     = false
 }
+
+variable "operator_invokers" {
+  description = "Principals allowed to use `gcloud run services proxy` (roles/run.invoker). Never public."
+  type        = list(string)
+  default     = []
+}
+
+variable "alert_email" {
+  description = "On-call email for alert notifications (pass at plan time; not committed)."
+  type        = string
+  default     = ""
+}

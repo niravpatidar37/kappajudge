@@ -42,3 +42,14 @@ output "secret_ids" {
   description = "Secret Manager secret ids (values are added out of band)."
   value       = { for k, s in google_secret_manager_secret.s : k => s.secret_id }
 }
+
+output "alert_policy_names" {
+  description = "Alert policies created for this environment (empty until deploy_services = true)."
+  value = [for p in concat(
+    google_monitoring_alert_policy.uptime, google_monitoring_alert_policy.error_ratio,
+    google_monitoring_alert_policy.api_latency_p95, google_monitoring_alert_policy.saturation,
+    google_monitoring_alert_policy.burn_fast, google_monitoring_alert_policy.burn_slow,
+    google_monitoring_alert_policy.job_failed, google_monitoring_alert_policy.eval_run_failed_event,
+    google_monitoring_alert_policy.gate_drift,
+  ) : p.display_name]
+}

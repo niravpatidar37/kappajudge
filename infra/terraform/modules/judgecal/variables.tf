@@ -111,9 +111,25 @@ variable "eval_schedule" {
 }
 
 variable "iap_members" {
-  description = "Principals allowed through IAP to the labeling UI (user:..., group:...)."
+  description = "Principals allowed through IAP to the labeling UI (user:..., group:..., serviceAccount:...). Never public."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for m in var.iap_members : can(regex("^(user|group|serviceAccount|domain):", m))])
+    error_message = "iap_members must be user:, group:, serviceAccount: or domain: principals; allUsers/allAuthenticatedUsers are refused (labeling data is private)."
+  }
+}
+
+variable "operator_invokers" {
+  description = "Principals granted roles/run.invoker so operators can reach the UI with `gcloud run services proxy` (IAM-authenticated tunnel). Never public."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for m in var.operator_invokers : can(regex("^(user|group|serviceAccount):", m))])
+    error_message = "operator_invokers must be user:, group: or serviceAccount: principals; allUsers/allAuthenticatedUsers are refused."
+  }
 }
 
 variable "kill_switch" {
@@ -183,4 +199,34 @@ variable "labels" {
   description = "Extra labels on every labelled resource."
   type        = map(string)
   default     = {}
+}
+
+# ----------------------------------------------------------------------------- monitoring
+variable "alert_email" {
+  description = "Email for the on-call notification channel. Empty = no channel (alerts still open incidents in the console)."
+  type        = string
+  default     = ""
+}
+
+variable "alert_5xx_ratio" {
+  description = "Alert when 5xx responses exceed this fraction of requests over 5 minutes."
+  type        = number
+  default     = 0.05
+}
+
+variable "api_latency_slo_ms" {
+  description = "p95 latency objective for /api/v1/* in milliseconds (docs/SLO.md)."
+  type        = number
+  default     = 1000
+}
+
+variable "slo_availability_goal" {
+  description = "Availability SLO (fraction of non-5xx requests over 28 days)."
+  type        = number
+  default     = 0.995
+
+  validation {
+    condition     = var.slo_availability_goal > 0.9 && var.slo_availability_goal < 1
+    error_message = "slo_availability_goal must be between 0.9 and 1 (exclusive)."
+  }
 }

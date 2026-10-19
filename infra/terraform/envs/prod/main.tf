@@ -19,6 +19,8 @@ module "judgecal" {
   create_registry          = false
   deployer_service_account = var.deployer_service_account
   iap_members              = var.iap_members
+  operator_invokers        = var.operator_invokers
+  alert_email              = var.alert_email
 
   min_instances         = var.min_instances
   max_instances         = var.max_instances

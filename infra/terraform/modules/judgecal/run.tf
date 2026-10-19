@@ -21,6 +21,7 @@ locals {
     PG_DB              = google_sql_database.judgecal.name
     PG_SSLMODE         = "require"
     PORTFOLIO_ENV_FILE = "/nonexistent"
+    ENV                = var.env # prod refuses LLM_RECORDED_MODE (fail closed)
   }
 
   ui_env = merge(local.common_env, {
@@ -37,6 +38,7 @@ locals {
 
   ui_secret_env = {
     POSTGRES_PASSWORD = "pg-app-password"
+    API_KEYS          = "ui-api-keys"
   }
 
   job_secret_env = {
@@ -173,6 +175,19 @@ resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {
   name     = google_cloud_run_v2_service.ui[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-iap.iam.gserviceaccount.com"
+}
+
+# Operators without a browser session can reach the UI over an IAM-authenticated local tunnel:
+#   gcloud run services proxy judgecal-ENV-ui --region REGION --port 8504
+# That needs roles/run.invoker, granted here only to the named principals (validated: never public).
+resource "google_cloud_run_v2_service_iam_member" "operator_invokers" {
+  for_each = var.deploy_services ? toset(var.operator_invokers) : toset([])
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.ui[0].name
+  role     = "roles/run.invoker"
+  member   = each.value
 }
 
 # Who may open the labeling UI through IAP (e.g. group:labelers@example.com, user:owner@example.com).
