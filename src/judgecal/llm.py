@@ -48,6 +48,10 @@ class StructuredOutputError(LLMError):
     pass
 
 
+class RecordingMissing(LLMError):
+    """Recorded LLM mode is on and no recorded output exists for this exact request (never goes to the network)."""
+
+
 class QuotaExhausted(LLMError):
     """Provider daily quota (tokens/requests per day) is exhausted: fail fast, checkpoint, resume later."""
 
@@ -96,10 +100,16 @@ class LLMClient:
         fake_responder: FakeResponder | None = None,
     ) -> None:
         load_env()
+        settings = get_settings()  # raises ConfigError if recorded mode is requested with ENV=prod
         self.provider = provider
         self.ledger = ledger or SpendLedger()
-        self.cache_dir = (cache_dir or get_settings().cache_dir) / "llm"
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.recorded = settings.llm_recorded_mode
+        if self.recorded:
+            # Read-only replay of real recorded outputs; the directory may be a read-only mount.
+            self.cache_dir = settings.llm_recorded_dir / "llm"
+        else:
+            self.cache_dir = (cache_dir or settings.cache_dir) / "llm"
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.use_cache = use_cache
         self.max_retries = max_retries
         self.max_wait_s = max_wait_s
@@ -129,11 +139,13 @@ class LLMClient:
         }
         key = cache_key(payload)
         cache_file = self.cache_dir / key[:2] / f"{key}.json"
-        if self.use_cache and cache_file.is_file():
+        if (self.use_cache or self.recorded) and cache_file.is_file():
             data = json.loads(cache_file.read_text(encoding="utf-8"))
             return LLMResult(
                 data["text"], data["input_tokens"], data["output_tokens"], 0.0, True, 0.0, model, self.provider
             )
+        if self.recorded:
+            raise RecordingMissing(f"LLM_RECORDED_MODE: no recorded output for request {key[:12]} ({model})")
 
         if not get_settings().llm_calls_enabled:
             raise LLMDisabled("LLM_CALLS_ENABLED=false (kill switch); refusing uncached model call")

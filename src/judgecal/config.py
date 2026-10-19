@@ -38,6 +38,14 @@ def _flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+PROD_ENVS = frozenset({"prod", "production"})
+MIN_API_KEY_CHARS = 24
+
+
+class ConfigError(ValueError):
+    """Unsafe or invalid configuration: the process refuses to start (fail closed)."""
+
+
 @dataclass(frozen=True)
 class Settings:
     judge_model: str = "qwen/qwen3.8-27b"
@@ -50,6 +58,23 @@ class Settings:
     results_dir: Path = REPO_ROOT / "results"
     llm_calls_enabled: bool = True  # kill switch: LLM_CALLS_ENABLED=false refuses every model call
     log_level: str = "INFO"
+    env: str = "dev"  # ENV: dev | ci | staging | prod
+    # Recorded LLM mode (LLM_RECORDED_MODE=true): every model call is answered ONLY from the recorded
+    # cache in LLM_RECORDED_DIR (real outputs captured earlier); a miss raises, the network is never
+    # used. For CI/compose smoke tests. Refused when ENV is prod (ConfigError).
+    llm_recorded_mode: bool = False
+    llm_recorded_dir: Path = REPO_ROOT / "tests" / "fixtures" / "recorded_llm"
+    # JSON API (/api/v1/*): X-API-Key auth, comma-separated keys for rotation. Empty = API disabled (503).
+    api_keys: tuple[str, ...] = field(default=(), repr=False)
+    rate_limit_per_min: float = 120.0
+    rate_limit_burst: int = 30
+    max_body_bytes: int = 16384
+    # Kill switch for label writes (UI form + API): LABEL_WRITES_ENABLED=false -> read-only (API 503).
+    label_writes_enabled: bool = True
+
+    @property
+    def is_prod(self) -> bool:
+        return self.env.strip().lower() in PROD_ENVS
 
 
 def database_url_from_env() -> str:
@@ -68,9 +93,16 @@ def database_url_from_env() -> str:
     return f"postgresql://{user}:{pw}@{host}:{port}/{db}?sslmode={sslmode}&connect_timeout=5"
 
 
+def _api_keys() -> tuple[str, ...]:
+    keys = tuple(k.strip() for k in os.environ.get("API_KEYS", "").split(",") if k.strip())
+    if any(len(k) < MIN_API_KEY_CHARS for k in keys):
+        raise ConfigError(f"every API_KEYS entry must be at least {MIN_API_KEY_CHARS} characters")
+    return keys
+
+
 def get_settings() -> Settings:
     load_env()
-    return Settings(
+    s = Settings(
         judge_model=os.environ.get("JUDGE_MODEL", Settings.judge_model),
         judge_provider=os.environ.get("JUDGE_PROVIDER", Settings.judge_provider),
         sut_model=os.environ.get("SUT_MODEL", Settings.sut_model),
@@ -79,4 +111,18 @@ def get_settings() -> Settings:
         cache_dir=Path(os.environ.get("JUDGECAL_CACHE_DIR", str(Settings.cache_dir))),
         llm_calls_enabled=_flag("LLM_CALLS_ENABLED", True),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        env=os.environ.get("ENV", "dev"),
+        llm_recorded_mode=_flag("LLM_RECORDED_MODE", False),
+        llm_recorded_dir=Path(os.environ.get("LLM_RECORDED_DIR", str(Settings.llm_recorded_dir))),
+        api_keys=_api_keys(),
+        rate_limit_per_min=float(os.environ.get("RATE_LIMIT_PER_MIN", Settings.rate_limit_per_min)),
+        rate_limit_burst=int(os.environ.get("RATE_LIMIT_BURST", Settings.rate_limit_burst)),
+        max_body_bytes=int(os.environ.get("MAX_BODY_BYTES", Settings.max_body_bytes)),
+        label_writes_enabled=_flag("LABEL_WRITES_ENABLED", True),
     )
+    if s.llm_recorded_mode and s.is_prod:
+        # Recorded mode would make the scheduled eval replay stale outputs and report them as fresh.
+        raise ConfigError("LLM_RECORDED_MODE cannot be enabled when ENV is prod")
+    if s.rate_limit_per_min <= 0 or s.rate_limit_burst < 1 or s.max_body_bytes < 1024:
+        raise ConfigError("RATE_LIMIT_PER_MIN > 0, RATE_LIMIT_BURST >= 1 and MAX_BODY_BYTES >= 1024 are required")
+    return s

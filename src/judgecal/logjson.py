@@ -38,6 +38,7 @@ class JsonFormatter(logging.Formatter):
         payload: dict[str, Any] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
             "level": record.levelname,
+            "severity": record.levelname,  # Cloud Logging maps this key to LogEntry.severity
             "logger": record.name,
             "msg": redact_pii(record.getMessage()),
         }
