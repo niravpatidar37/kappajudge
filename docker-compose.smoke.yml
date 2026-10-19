@@ -1,0 +1,29 @@
+# Smoke-test overlay (CI job `smoke` and the local smoke run). Adds an API key to the app and the
+# scheduled-eval job in RECORDED LLM mode: it replays real model outputs captured earlier
+# (tests/fixtures/recorded_llm), never calls a provider, and is refused by the app when ENV=prod.
+#   SMOKE_API_KEY=... docker compose -p p4-judge -f docker-compose.yml -f docker-compose.smoke.yml up -d app
+services:
+  app:
+    environment:
+      API_KEYS: ${SMOKE_API_KEY:?set SMOKE_API_KEY (>= 24 chars)}
+      RATE_LIMIT_PER_MIN: "120"
+      RATE_LIMIT_BURST: "30"
+
+  evaljob:
+    image: judgecal:local
+    profiles: ["jobs"]
+    command: ["python", "-m", "judgecal.evalrun", "--store", "--out", "/tmp/eval_runs"]
+    environment:
+      DATABASE_URL: postgresql://judgecal:${POSTGRES_PASSWORD}@postgres:5432/judgecal
+      ENV: ci
+      LLM_RECORDED_MODE: "true"
+      LLM_RECORDED_DIR: /fixtures/recorded_llm
+      LLM_SPEND_LEDGER: /tmp/judgecal-ledger.jsonl
+      PORTFOLIO_ENV_FILE: /nonexistent
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
+      - ./scripts/demo:/demo:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"

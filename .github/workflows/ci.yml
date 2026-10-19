@@ -161,6 +161,65 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 \
             image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress judgecal:ci
+      - name: CycloneDX SBOM of the image (trivy, pinned by digest)
+        run: |
+          mkdir -p "$RUNNER_TEMP/sbom"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$RUNNER_TEMP/sbom:/out" \
+            aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 \
+            image --format cyclonedx --output /out/kappajudge.cdx.json --no-progress judgecal:ci
+          test -s "$RUNNER_TEMP/sbom/kappajudge.cdx.json"
+          jq -e '.bomFormat == "CycloneDX" and (.components | length) > 50' "$RUNNER_TEMP/sbom/kappajudge.cdx.json" > /dev/null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: ${{ runner.temp }}/sbom/kappajudge.cdx.json
+          if-no-files-found: error
+
+  # End-to-end smoke test of the full compose stack (Postgres + migrate + app + the eval job in recorded
+  # LLM mode). No repository secrets: the DB password and API key are generated per run and masked.
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMPOSE: docker compose -p p4-judge -f docker-compose.yml -f docker-compose.smoke.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.9.21"
+      - name: Install (locked; the smoke script's gate-CLI checks use the repo checkout)
+        run: uv sync --frozen --python 3.12 --no-dev
+      - name: Throwaway credentials for this run
+        run: |
+          pw="$(openssl rand -hex 24)"; key="$(openssl rand -hex 24)"
+          echo "::add-mask::$pw"; echo "::add-mask::$key"
+          { echo "POSTGRES_PASSWORD=$pw"; echo "SMOKE_API_KEY=$key"; } >> "$GITHUB_ENV"
+      - name: Build image and start the stack (images pinned by digest)
+        run: |
+          set -euo pipefail
+          $COMPOSE build
+          $COMPOSE up -d app
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8504/readyz > /dev/null && break; sleep 2; done
+          $COMPOSE run --rm -T migrate python -m judgecal.cli seed-queue
+      - name: Smoke test (scripts/smoke.py)
+        run: |
+          uv run --frozen --no-dev python scripts/smoke.py --base-url http://127.0.0.1:8504 \
+            --compose "$COMPOSE" --gate-cli --json-out "$RUNNER_TEMP/smoke-summary.json"
+      - name: Upload the JSON summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-summary
+          path: ${{ runner.temp }}/smoke-summary.json
+          if-no-files-found: warn
+      - name: Compose logs on failure
+        if: ${{ failure() }}
+        run: $COMPOSE logs --no-color --timestamps
+      - name: Tear down
+        if: ${{ always() }}
+        run: $COMPOSE --profile jobs down -v --remove-orphans
 
   # Migrations, labeling store and /healthz + /readyz against a real Postgres service container.
   # Throwaway credentials scoped to this job; no repository secrets are used.
@@ -204,7 +263,7 @@ jobs:
           uv run --frozen python -m judgecal.cli migrate
           uv run --frozen python -m judgecal.cli migrate
           uv run --frozen python -m judgecal.cli seed-queue
-          uv run --frozen pytest -p no:cacheprovider -q -rs tests/test_db_integration.py
+          uv run --frozen pytest -p no:cacheprovider -q -rs tests/test_db_integration.py tests/test_api_integration.py
           uv run --frozen uvicorn judgecal.asgi:app --host 127.0.0.1 --port 8504 > "$RUNNER_TEMP/uv.log" 2>&1 &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8504/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:8504/readyz

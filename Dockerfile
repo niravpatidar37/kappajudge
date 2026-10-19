@@ -17,7 +17,8 @@ WORKDIR /app
 RUN mkdir -p /app/.streamlit && chown app:app /app/.streamlit
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     JUDGECAL_ROOT=/app PORT=8504 STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
-    STREAMLIT_SERVER_HEADLESS=true DEEPEVAL_TELEMETRY_OPT_OUT=YES
+    STREAMLIT_SERVER_HEADLESS=true DEEPEVAL_TELEMETRY_OPT_OUT=YES \
+    STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=none ENV=dev
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --chown=app:app src ./src
 COPY --chown=app:app migrations ./migrations
@@ -26,6 +27,8 @@ COPY --chown=app:app prompts ./prompts
 COPY --chown=app:app data/p1_label_queue.jsonl data/p1_eval_set.json data/calibration_sample.jsonl ./data/
 COPY --chown=app:app results ./results
 COPY --chown=app:app judge_release.json gate_config.json ./
+# The scheduled eval job compares each fresh run with this baseline (gate-drift alert).
+COPY --chown=app:app eval_runs/baseline.json ./eval_runs/baseline.json
 USER app
 EXPOSE 8504
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

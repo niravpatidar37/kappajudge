@@ -1,9 +1,10 @@
 name: deploy
 
-# Build once -> push to Artifact Registry -> STAGING (migrate job, no-traffic canary revision, smoke
-# /healthz + /readyz, promote, update the scheduled eval job) -> PROD behind the `production`
-# environment (manual approval): migrate, canary revision, smoke, CANARY_PERCENT traffic, soak, smoke,
-# 100%; automatic rollback to the previous revision if any smoke test fails.
+# Build once -> sign (keyless cosign) -> push to Artifact Registry -> STAGING (verify signature, migrate
+# job, no-traffic canary, full smoke test scripts/smoke.py, eval-job preflight, promote, smoke again) ->
+# PROD behind the `production` environment (manual approval): verify, migrate, canary at 0%, smoke,
+# CANARY_PERCENT traffic, soak, smoke, 100%, smoke. Any failed smoke rolls the service (and the eval
+# job image) back to the previous revision automatically.
 #
 # Every job is skipped until the repo variable GCP_PROJECT_ID is set (one-time bootstrap in
 # docs/RUNBOOK.md), so this workflow passes while no cloud project is connected. Auth is keyless
@@ -28,7 +29,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write # WIF: exchange the GitHub OIDC token for short-lived GCP credentials
+      id-token: write # WIF + keyless cosign signing (Fulcio certificate bound to this workflow identity)
     outputs:
       image: ${{ steps.push.outputs.image }}
     steps:
@@ -40,6 +41,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: build and push (tag = commit sha; tags are immutable in the repo)
         id: push
         env:
@@ -55,12 +57,16 @@ jobs:
           digest="$(gcloud artifacts docker images describe "${repo}:${SHA}" --format='value(image_summary.digest)')"
           case "$digest" in sha256:*) ;; *) echo "no digest resolved"; exit 1 ;; esac
           echo "image=${repo}@${digest}" >> "$GITHUB_OUTPUT"
+      - name: sign the digest (keyless; signature stored next to the image)
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+        run: cosign sign --yes "$IMAGE"
 
   deploy-staging:
     needs: build
     if: ${{ vars.GCP_PROJECT_ID != '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     environment: staging
     permissions:
       contents: read
@@ -71,6 +77,8 @@ jobs:
       SVC: judgecal-staging-ui
       MIGRATE: judgecal-staging-migrate
       EVAL: judgecal-staging-eval
+      API_KEY_SECRET: judgecal-staging-ui-api-keys
+      SIGNER: https://github.com/${{ github.repository }}/.github/workflows/deploy.yml@refs/heads/main
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,6 +92,13 @@ jobs:
           id_token_audience: ${{ vars.GCP_IAP_CLIENT_ID }} # IAP programmatic-access OAuth client (RUNBOOK)
           id_token_include_email: true
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: verify the image signature (built and signed by this workflow on main)
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          cosign verify "$IMAGE" --certificate-identity "$SIGNER" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
       - name: run migrations (Cloud Run job, before any new code serves)
         run: |
           set -euo pipefail
@@ -96,35 +111,51 @@ jobs:
           prev="$(gcloud run services describe "$SVC" --region "$REGION" --format=json \
             | jq -r '[.status.traffic[] | select(.percent != null)] | max_by(.percent) | .revisionName')"
           echo "prev=${prev}" >> "$GITHUB_OUTPUT"
+          echo "prev_eval_image=$(gcloud run jobs describe "$EVAL" --region "$REGION" \
+            --format='value(template.template.containers[0].image)')" >> "$GITHUB_OUTPUT"
           gcloud run deploy "$SVC" --region "$REGION" --container ui --image "$IMAGE" --no-traffic --tag canary --quiet
           url="$(gcloud run services describe "$SVC" --region "$REGION" --format='value(status.url)')"
           echo "canary_url=${url/https:\/\//https://canary---}" >> "$GITHUB_OUTPUT"
           echo "url=${url}" >> "$GITHUB_OUTPUT"
-      - name: smoke canary (/healthz + /readyz)
+      - name: smoke canary (scripts/smoke.py, 0% traffic)
         env:
           SMOKE_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           URL: ${{ steps.canary.outputs.canary_url }}
-        run: bash scripts/smoke_deploy.sh "$URL"
+        run: bash scripts/deploy_smoke.sh "$URL" "$RUNNER_TEMP/smoke-staging-canary.json"
+      - name: scheduled eval job - new image + preflight (no model calls)
+        run: |
+          set -euo pipefail
+          gcloud run jobs update "$EVAL" --image "$IMAGE" --region "$REGION" --quiet
+          gcloud run jobs execute "$EVAL" --region "$REGION" --args=-m,judgecal.evalrun,--smoke --wait
       - name: promote to 100%
         run: gcloud run services update-traffic "$SVC" --region "$REGION" --to-latest --quiet
       - name: smoke main URL
         env:
           SMOKE_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           URL: ${{ steps.canary.outputs.url }}
-        run: bash scripts/smoke_deploy.sh "$URL"
-      - name: point the scheduled eval job at the new image
-        run: gcloud run jobs update "$EVAL" --image "$IMAGE" --region "$REGION" --quiet
-      - name: rollback to the previous revision
+        run: bash scripts/deploy_smoke.sh "$URL" "$RUNNER_TEMP/smoke-staging.json"
+      - name: rollback service and eval job to the previous release
         if: ${{ failure() && steps.canary.outputs.prev != '' }}
         env:
           PREV: ${{ steps.canary.outputs.prev }}
-        run: gcloud run services update-traffic "$SVC" --region "$REGION" --to-revisions "${PREV}=100" --quiet
+          PREV_EVAL_IMAGE: ${{ steps.canary.outputs.prev_eval_image }}
+        run: |
+          gcloud run services update-traffic "$SVC" --region "$REGION" --to-revisions "${PREV}=100" --quiet
+          if [ -n "$PREV_EVAL_IMAGE" ]; then gcloud run jobs update "$EVAL" --image "$PREV_EVAL_IMAGE" --region "$REGION" --quiet; fi
+          echo "::error::rolled back ${SVC} to ${PREV}"
+      - name: upload smoke summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-staging
+          path: ${{ runner.temp }}/smoke-*.json
+          if-no-files-found: ignore
 
   deploy-prod:
     needs: [build, deploy-staging]
     if: ${{ vars.GCP_PROJECT_ID != '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     environment: production # required reviewers = the manual approval gate
     permissions:
       contents: read
@@ -135,6 +166,8 @@ jobs:
       SVC: judgecal-prod-ui
       MIGRATE: judgecal-prod-migrate
       EVAL: judgecal-prod-eval
+      API_KEY_SECRET: judgecal-prod-ui-api-keys
+      SIGNER: https://github.com/${{ github.repository }}/.github/workflows/deploy.yml@refs/heads/main
       CANARY_PERCENT: "10"
       CANARY_SOAK_S: "300"
     steps:
@@ -150,6 +183,13 @@ jobs:
           id_token_audience: ${{ vars.GCP_IAP_CLIENT_ID }}
           id_token_include_email: true
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: verify the image signature
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          cosign verify "$IMAGE" --certificate-identity "$SIGNER" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
       - name: run migrations
         run: |
           set -euo pipefail
@@ -162,6 +202,8 @@ jobs:
           prev="$(gcloud run services describe "$SVC" --region "$REGION" --format=json \
             | jq -r '[.status.traffic[] | select(.percent != null)] | max_by(.percent) | .revisionName')"
           echo "prev=${prev}" >> "$GITHUB_OUTPUT"
+          echo "prev_eval_image=$(gcloud run jobs describe "$EVAL" --region "$REGION" \
+            --format='value(template.template.containers[0].image)')" >> "$GITHUB_OUTPUT"
           gcloud run deploy "$SVC" --region "$REGION" --container ui --image "$IMAGE" --no-traffic --tag canary --quiet
           new="$(gcloud run services describe "$SVC" --region "$REGION" --format=json \
             | jq -r '.status.traffic[] | select(.tag == "canary") | .revisionName')"
@@ -169,11 +211,16 @@ jobs:
           url="$(gcloud run services describe "$SVC" --region "$REGION" --format='value(status.url)')"
           echo "canary_url=${url/https:\/\//https://canary---}" >> "$GITHUB_OUTPUT"
           echo "url=${url}" >> "$GITHUB_OUTPUT"
-      - name: smoke canary revision (0% traffic)
+      - name: smoke canary revision (0% traffic, before any user traffic)
         env:
           SMOKE_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           URL: ${{ steps.canary.outputs.canary_url }}
-        run: bash scripts/smoke_deploy.sh "$URL"
+        run: bash scripts/deploy_smoke.sh "$URL" "$RUNNER_TEMP/smoke-prod-canary.json"
+      - name: scheduled eval job - new image + preflight (no model calls)
+        run: |
+          set -euo pipefail
+          gcloud run jobs update "$EVAL" --image "$IMAGE" --region "$REGION" --quiet
+          gcloud run jobs execute "$EVAL" --region "$REGION" --args=-m,judgecal.evalrun,--smoke --wait
       - name: shift canary traffic
         env:
           NEW: ${{ steps.canary.outputs.new }}
@@ -183,7 +230,7 @@ jobs:
           rest=$((100 - CANARY_PERCENT))
           gcloud run services update-traffic "$SVC" --region "$REGION" \
             --to-revisions "${NEW}=${CANARY_PERCENT},${PREV}=${rest}" --quiet
-      - name: soak, then smoke under canary traffic
+      - name: soak, then smoke under canary traffic (still before 100%)
         env:
           SMOKE_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           URL: ${{ steps.canary.outputs.url }}
@@ -191,8 +238,8 @@ jobs:
         run: |
           set -euo pipefail
           sleep "$CANARY_SOAK_S"
-          bash scripts/smoke_deploy.sh "$CANARY_URL"
-          bash scripts/smoke_deploy.sh "$URL"
+          bash scripts/deploy_smoke.sh "$CANARY_URL" "$RUNNER_TEMP/smoke-prod-canary-soak.json" --skip-rate-limit
+          bash scripts/deploy_smoke.sh "$URL" "$RUNNER_TEMP/smoke-prod-split.json" --skip-rate-limit
       - name: promote to 100%
         env:
           NEW: ${{ steps.canary.outputs.new }}
@@ -201,13 +248,20 @@ jobs:
         env:
           SMOKE_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           URL: ${{ steps.canary.outputs.url }}
-        run: bash scripts/smoke_deploy.sh "$URL"
-      - name: point the scheduled eval job at the new image
-        run: gcloud run jobs update "$EVAL" --image "$IMAGE" --region "$REGION" --quiet
-      - name: automatic rollback
+        run: bash scripts/deploy_smoke.sh "$URL" "$RUNNER_TEMP/smoke-prod.json" --skip-rate-limit
+      - name: automatic rollback (service + eval job)
         if: ${{ failure() && steps.canary.outputs.prev != '' }}
         env:
           PREV: ${{ steps.canary.outputs.prev }}
+          PREV_EVAL_IMAGE: ${{ steps.canary.outputs.prev_eval_image }}
         run: |
           gcloud run services update-traffic "$SVC" --region "$REGION" --to-revisions "${PREV}=100" --quiet
+          if [ -n "$PREV_EVAL_IMAGE" ]; then gcloud run jobs update "$EVAL" --image "$PREV_EVAL_IMAGE" --region "$REGION" --quiet; fi
           echo "::error::rolled back ${SVC} to ${PREV}"
+      - name: upload smoke summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-prod
+          path: ${{ runner.temp }}/smoke-*.json
+          if-no-files-found: ignore
