@@ -16,7 +16,7 @@ import streamlit as st
 
 from judgecal import db
 from judgecal.agreement import judge_vs_labels, self_agreement
-from judgecal.config import REPO_ROOT
+from judgecal.config import REPO_ROOT, get_settings
 from judgecal.rubric import load_rubric
 from judgecal.runs import read_jsonl
 
@@ -84,7 +84,10 @@ def _score_form(item: dict[str, Any], labeler: str, pass_no: int) -> None:
                 help="  \n".join(f"{k}: {v}" for k, v in sorted(c.scale.items())),
             )
         note = st.text_area("Note (why; what is ambiguous?)", max_chars=2000)
-        if st.form_submit_button("Save label"):
+        writes_enabled = get_settings().label_writes_enabled  # kill switch, read on every render
+        if not writes_enabled:
+            st.warning("Labeling is read-only right now (LABEL_WRITES_ENABLED=false).")
+        if st.form_submit_button("Save label", disabled=not writes_enabled):
             if any(v is None for v in scores.values()):
                 st.error("Score every criterion before saving.")
                 return
@@ -111,11 +114,14 @@ def page_label() -> None:
     source = st.sidebar.selectbox("Queue", ["p1", "helpsteer2"], index=0)
     with db.connect() as conn:
         counts = db.label_counts(conn)
-        item = db.next_item(conn, labeler, source)
+        upcoming = db.queue_preview(conn, labeler, source, limit=5)  # same query as GET /api/v1/queue
     st.sidebar.write(counts)
-    if item is None:
+    if not upcoming:
         st.success("Queue done for this labeler.")
         return
+    item = upcoming[0]
+    with st.sidebar.expander(f"Up next ({len(upcoming)} shown)"):
+        st.dataframe(pd.DataFrame([{"item_id": r["item_id"], "kind": r["kind"]} for r in upcoming]), hide_index=True)
     _show_item(item)
     _score_form(item, labeler, pass_no=1)
 

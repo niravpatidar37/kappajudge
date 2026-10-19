@@ -21,6 +21,8 @@ from judgecal.config import REPO_ROOT, get_settings
 MIGRATIONS_DIR = REPO_ROOT / "migrations"
 _MIGRATION_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 LABELER_RE = re.compile(r"^[A-Za-z0-9_.\-]{2,40}$")
+# Labels written by the smoke test (labeler ids `smoke-*`) are excluded from agreement statistics and counts.
+SMOKE_PREFIX = "smoke-"
 
 
 @contextmanager
@@ -68,6 +70,16 @@ def ping(conn: psycopg.Connection[Any]) -> bool:
     return bool(row)
 
 
+def schema_status(conn: psycopg.Connection[Any], directory: Path = MIGRATIONS_DIR) -> dict[str, list[str]]:
+    """Applied vs expected migration versions (expected = the files shipped with this build)."""
+    expected = [v for v, _ in migration_files(directory)]
+    exists = conn.execute("SELECT to_regclass('public.schema_migrations') IS NOT NULL AS ok").fetchone()
+    applied: list[str] = []
+    if exists and exists["ok"]:
+        applied = [r["version"] for r in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+    return {"applied": applied, "expected": expected, "pending": [v for v in expected if v not in applied]}
+
+
 # ---------------------------------------------------------------- labeling
 def upsert_items(conn: psycopg.Connection[Any], items: list[dict[str, Any]]) -> int:
     n = 0
@@ -91,12 +103,34 @@ def upsert_items(conn: psycopg.Connection[Any], items: list[dict[str, Any]]) -> 
     return n
 
 
-def next_item(conn: psycopg.Connection[Any], labeler_id: str, source: str | None = None) -> dict[str, Any] | None:
-    row: dict[str, Any] | None = conn.execute(
+def queue_preview(
+    conn: psycopg.Connection[Any], labeler_id: str, source: str | None = None, limit: int = 5
+) -> list[dict[str, Any]]:
+    """The labeler's next unlabeled items (first pass), in queue order. Used by the Label page and the API."""
+    rows: list[dict[str, Any]] = conn.execute(
         "SELECT i.* FROM label_items i WHERE (%(src)s::text IS NULL OR i.source = %(src)s) AND NOT EXISTS "
         "(SELECT 1 FROM labels l WHERE l.item_id = i.item_id AND l.labeler_id = %(lab)s AND l.pass_no = 1) "
-        "ORDER BY i.item_id LIMIT 1",
-        {"src": source, "lab": labeler_id},
+        "ORDER BY i.item_id LIMIT %(n)s",
+        {"src": source, "lab": labeler_id, "n": max(1, min(int(limit), 100))},
+    ).fetchall()
+    return rows
+
+
+def next_item(conn: psycopg.Connection[Any], labeler_id: str, source: str | None = None) -> dict[str, Any] | None:
+    rows = queue_preview(conn, labeler_id, source, limit=1)
+    return rows[0] if rows else None
+
+
+def get_item(conn: psycopg.Connection[Any], item_id: str) -> dict[str, Any] | None:
+    row: dict[str, Any] | None = conn.execute("SELECT * FROM label_items WHERE item_id = %s", (item_id,)).fetchone()
+    return row
+
+
+def get_label(conn: psycopg.Connection[Any], item_id: str, labeler_id: str, pass_no: int = 1) -> dict[str, Any] | None:
+    row: dict[str, Any] | None = conn.execute(
+        "SELECT item_id, labeler_id, pass_no, scores, note, created_at FROM labels "
+        "WHERE item_id = %s AND labeler_id = %s AND pass_no = %s",
+        (item_id, labeler_id, pass_no),
     ).fetchone()
     return row
 
@@ -148,7 +182,9 @@ def save_label(
 
 def all_labels(conn: psycopg.Connection[Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = conn.execute(
-        "SELECT item_id, labeler_id, pass_no, scores, note, created_at FROM labels ORDER BY created_at"
+        "SELECT item_id, labeler_id, pass_no, scores, note, created_at FROM labels "
+        "WHERE NOT starts_with(labeler_id, %s) ORDER BY created_at",
+        (SMOKE_PREFIX,),
     ).fetchall()
     return rows
 
@@ -156,8 +192,9 @@ def all_labels(conn: psycopg.Connection[Any]) -> list[dict[str, Any]]:
 def label_counts(conn: psycopg.Connection[Any]) -> dict[str, int]:
     row = conn.execute(
         "SELECT (SELECT count(*) FROM label_items) AS items, "
-        "(SELECT count(*) FROM labels WHERE pass_no = 1) AS first_pass, "
-        "(SELECT count(*) FROM labels WHERE pass_no = 2) AS second_pass"
+        "(SELECT count(*) FROM labels WHERE pass_no = 1 AND NOT starts_with(labeler_id, %(p)s)) AS first_pass, "
+        "(SELECT count(*) FROM labels WHERE pass_no = 2 AND NOT starts_with(labeler_id, %(p)s)) AS second_pass",
+        {"p": SMOKE_PREFIX},
     ).fetchone()
     return {k: int(v) for k, v in (row or {}).items()}
 
@@ -192,10 +229,12 @@ def insert_run(conn: psycopg.Connection[Any], record: dict[str, Any], kind: str 
             )
 
 
-def list_runs(conn: psycopg.Connection[Any], kind: str | None = None) -> list[dict[str, Any]]:
+def list_runs(conn: psycopg.Connection[Any], kind: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
+    """Eval runs of a kind, oldest first; `limit` keeps the most recent N."""
     rows: list[dict[str, Any]] = conn.execute(
-        "SELECT run_id, kind, created_at, git_commit, prompt_sha256, judge_model, rubric_version, summary, "
-        "n_items, usd FROM eval_runs WHERE (%(k)s::text IS NULL OR kind = %(k)s) ORDER BY created_at",
-        {"k": kind},
+        "SELECT * FROM (SELECT run_id, kind, created_at, git_commit, prompt_sha256, judge_model, rubric_version, "
+        "summary, n_items, usd FROM eval_runs WHERE (%(k)s::text IS NULL OR kind = %(k)s) "
+        "ORDER BY created_at DESC LIMIT %(n)s) r ORDER BY created_at",
+        {"k": kind, "n": max(1, min(int(limit), 1000))},
     ).fetchall()
     return rows
