@@ -1,0 +1,84 @@
+{
+  "ran_at": "2026-10-19T06:30:56Z",
+  "command": "pytest -q -x tests/test_api_security.py tests/test_recorded_and_evaljob.py",
+  "method": "one source edit at a time, file restored after each (verifying-security-guarantees mutate.py)",
+  "results": [
+    {
+      "status": "KILLED",
+      "mutant": "auth: accept any key",
+      "first_failure": "FAILED tests/test_api_security.py::test_auth_required_wrong_key_rejected_and_both_rotation_keys_accepted"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "no keys -> open",
+      "first_failure": "FAILED tests/test_api_security.py::test_api_disabled_without_keys - assert (4..."
+    },
+    {
+      "status": "KILLED",
+      "mutant": "rate limit off",
+      "first_failure": "FAILED tests/test_api_security.py::test_rate_limit_429_with_retry_after_per_key"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "failed-auth throttle off",
+      "first_failure": "FAILED tests/test_api_security.py::test_failed_auth_is_throttled_per_ip - ass..."
+    },
+    {
+      "status": "KILLED",
+      "mutant": "body cap off",
+      "first_failure": "FAILED tests/test_api_security.py::test_oversize_body_413_declared_and_streamed"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "human labeler allowed",
+      "first_failure": "FAILED tests/test_api_security.py::test_api_cannot_write_or_read_human_labelers"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "write kill switch ignored",
+      "first_failure": "FAILED tests/test_api_security.py::test_label_roundtrip_and_write_kill_switch"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "500 leaks",
+      "first_failure": "FAILED tests/test_api_security.py::test_internal_errors_are_opaque - json.dec..."
+    },
+    {
+      "status": "KILLED",
+      "mutant": "422 echoes input",
+      "first_failure": "FAILED tests/test_api_security.py::test_label_validation_422_without_echoing_input"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "no headers",
+      "first_failure": "FAILED tests/test_api_security.py::test_security_headers_on_api_errors_and_ui"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "recorded allowed in prod",
+      "first_failure": "FAILED tests/test_recorded_and_evaljob.py::test_recorded_mode_is_refused_in_prod[prod]"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "short keys allowed",
+      "first_failure": "FAILED tests/test_api_security.py::test_short_api_key_fails_closed - Failed: ..."
+    },
+    {
+      "status": "KILLED",
+      "mutant": "recorded miss goes to network",
+      "first_failure": "FAILED tests/test_recorded_and_evaljob.py::test_recorded_miss_raises_without_network"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "drift not flagged",
+      "first_failure": "FAILED tests/test_recorded_and_evaljob.py::test_drift_is_logged_and_fails_with_flag"
+    },
+    {
+      "status": "KILLED",
+      "mutant": "no failure event",
+      "first_failure": "FAILED tests/test_recorded_and_evaljob.py::test_kill_switch_stops_eval_job_and_logs_failure"
+    }
+  ],
+  "killed": 15,
+  "total": 15
+}

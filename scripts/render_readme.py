@@ -323,6 +323,28 @@ def spend() -> str:
     return NYM if not path.is_file() else "see results/spend_snapshot.json"
 
 
+def smoke_summary() -> str:
+    sm = _j(RES / "smoke_local.json")
+    if not sm:
+        return NYM
+    return (
+        f"**{sm['passed']}/{sm['total']} checks passed** ({sm['failed']} failed, {sm['skipped']} skipped) in "
+        f"{sm['duration_s']} s against the local compose stack on {sm['started_at'][:10]}"
+    )
+
+
+def smoke_table() -> str:
+    sm = _j(RES / "smoke_local.json")
+    if not sm:
+        return NYM
+    lines = ["| Check | Result | Detail |", "|---|---|---|"]
+    for c in sm["checks"]:
+        detail = str(c["detail"]).replace("|", "/")
+        detail = detail if len(detail) <= 110 else detail[:107] + "..."
+        lines.append(f"| `{c['check']}` | {c['status']} | {detail} |")
+    return "\n".join(lines)
+
+
 def main() -> None:
     _snapshot()
     tpl = (ROOT / "docs" / "README.template.md").read_text(encoding="utf-8")

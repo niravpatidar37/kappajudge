@@ -256,7 +256,11 @@ sensitive; a PR author may try to weaken the release gate.
 | Labels: labeler id regex + score bounds in code and DB CHECK constraints; bound SQL parameters only | `db.py`, `migrations/` | `tests/test_db_integration.py` |
 | Untrusted text rendered with `st.text`/`st.code` only (no Markdown/HTML) | `webapp/main.py` | review |
 | PII and keys redacted from JSON logs | `logjson.py` | `test_redacts_pii_and_keys` |
-| UI behind IAP; UI service account cannot call models or read the Groq key | `infra/terraform` | checkov, tflint |
+| UI behind IAP; UI service account cannot call models or read the Groq key; no public invoker anywhere | `infra/terraform` | `tests/test_infra_guards.py`, checkov, tflint |
+| JSON API: `X-API-Key` (constant-time, rotation), per-key token bucket + per-IP failed-auth throttle (429 + Retry-After), 16 KiB body cap (413), Pydantic validation without echoing input (422), opaque 500s with a request id | `api.py`, `security.py` | `tests/test_api_security.py` |
+| API can write/read only `api-*`/`smoke-*` labelers (no impersonation of human labelers); `LABEL_WRITES_ENABLED=false` makes labeling read-only | `api.py`, `webapp/main.py` | `test_api_cannot_write_or_read_human_labelers`, `test_label_roundtrip_and_write_kill_switch` |
+| Security headers on every response (nosniff, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, strict CSP + `no-store` on JSON, no server banner) | `security.py` | `test_security_headers_on_api_errors_and_ui` |
+| Recorded LLM mode (CI smoke) refused when `ENV=prod`; a recording miss never reaches the network | `config.py`, `llm.py` | `test_recorded_mode_is_refused_in_prod`, `test_recorded_miss_raises_without_network` |
 
 **Residual risk:** a forged eval record passes the evidence gate (closed only by the live gate); prompt
 injection inside judged text can still bias a score (fencing is defence in depth); same-repo PR code
@@ -279,6 +283,33 @@ runs on CI runners. Report vulnerabilities privately: [SECURITY.md](SECURITY.md)
 
 </details>
 
+## Production readiness
+
+Smoke test (`scripts/smoke.py`, 22 checks: liveness, readiness, Streamlit health and app shell,
+security headers, auth, kill switches, labeling queue from Postgres, validation, oversize, error
+hygiene, label round trip, rate limit, idempotent migrations, the eval job in recorded mode, drift
+detection, and the gate CLI on the baseline vs a regressed record):
+{{SMOKE_SUMMARY}} (raw: [`results/smoke_local.json`](results/smoke_local.json)). The same script runs
+in the CI `smoke` job and after every staging and prod-canary rollout in `deploy.yml`.
+
+<details><summary>Local smoke run, check by check</summary>
+
+{{SMOKE_TABLE}}
+
+</details>
+
+| Item | Status |
+|---|---|
+| Smoke suite in CI (compose stack, recorded LLM mode, JSON artifact, logs on failure) | done |
+| Smoke + eval-job preflight after staging deploy and prod canary, automatic rollback | done in `deploy.yml`; **not applied** (no cloud account) |
+| Labeling UI never public: IAP, invoker = IAP agent + named operators, validated in Terraform and tests | done; not applied |
+| Monitoring as code: uptime, 5xx ratio, API p95, saturation, SLO + multi-window burn rate, eval-job failure, gate drift | done (`monitoring.tf`, checked with `terraform validate`, tflint, checkov); **not applied** |
+| Supply chain: Dependabot (actions, docker, compose, uv, terraform), CycloneDX SBOM artifact, keyless cosign sign + verify | done; signing/verify run only once GCP is connected |
+| Kill switches: model calls (eval job), label writes (UI + API) | done |
+| Uptime check passing through IAP with the Monitoring agent's OIDC token | **unverified** until the first apply (RUNBOOK) |
+| Required status checks in branch protection | **human**: GitHub currently creates no `push`/`pull_request` runs on this repo, so requiring checks would block merges ([CONTRIBUTING.md](CONTRIBUTING.md)) |
+| Real deployment, on-call rota, load test, human labels | **not done / human** |
+
 ## Deployment
 
 Status: **deploy-ready; not applied (no cloud account connected).** Local docker compose is the only
@@ -292,14 +323,15 @@ skipped until the repo variables exist.
 
 - One-time bootstrap (WIF pool, deploy SA, repo variables `GCP_PROJECT_ID`, `GCP_REGION`,
   `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `GCP_IAP_CLIENT_ID`): [docs/RUNBOOK.md](docs/RUNBOOK.md)
-- Runbook (deploy, verify, rollback, rotate secrets, kill switch, incidents): [docs/RUNBOOK.md](docs/RUNBOOK.md)
-- SLOs and monthly cost estimate: [docs/SLO.md](docs/SLO.md)
+- Runbook (deploy, access model, verify, smoke test, monitoring, on-call checklist, rollback, rotate
+  secrets, kill switches, incidents): [docs/RUNBOOK.md](docs/RUNBOOK.md)
+- SLOs, alerts and monthly cost estimate: [docs/SLO.md](docs/SLO.md)
 
 ## Project layout
 
 ```text
 src/judgecal/          judge, rubric, LLM client (cache, spend cap, kill switch), metrics, gate, eval run, CLI
-  webapp/              Streamlit labeling UI (/healthz and /readyz via asgi.py)
+  webapp/              Streamlit labeling UI (/healthz, /readyz and /api/v1 via asgi.py, api.py, security.py)
 rubrics/               rubric_v1.json (release), rubric_v2.json (negative result), CHANGELOG.md
 prompts/rag_answer.md  system-under-test prompt (its SHA-256 is pinned by the eval record)
 eval_runs/             baseline.json, latest.json, history/ (release-gate evidence)
@@ -307,7 +339,8 @@ gate_config.json       per-criterion allowed drop
 judge_release.json     the judge config the gate uses
 data/                  HelpSteer2 sample, anchor pool, hopcite eval set + label queue, dataset manifest
 results/               raw judgments, bias runs, summaries, iteration curve, UI screenshot
-scripts/               experiments (resumable), report.py, render_readme.py
+scripts/               experiments (resumable), report.py, render_readme.py, smoke.py, deploy_smoke.sh
+tests/fixtures/        recorded LLM outputs (CI smoke, $0 replay) + the regressed gate record
 migrations/            numbered SQL migrations
 infra/terraform/       Cloud Run / Cloud SQL / IAP module + staging and prod envs
 assets/brand/          logo, icons, social preview + tools/build_brand.py

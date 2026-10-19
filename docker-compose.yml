@@ -35,6 +35,8 @@ services:
     environment:
       DATABASE_URL: postgresql://judgecal:${POSTGRES_PASSWORD}@postgres:5432/judgecal
       LLM_CALLS_ENABLED: "false"   # the UI never calls models
+      ENV: dev
+      API_KEYS: ${API_KEYS:-}        # empty = /api/v1 disabled (503); >= 24 chars each, comma-separated
     ports:
       - "127.0.0.1:8504:8504"
     depends_on:

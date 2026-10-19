@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from judgecal.config import REPO_ROOT, get_settings
-from judgecal.gate import build_record
+from judgecal.gate import BASELINE_PATH, GateResult, build_record, canonical_sha256
+from judgecal.gate import check as gate_check
+from judgecal.gate import load_config as load_gate_config
 from judgecal.judge import Judge, JudgeItem
 from judgecal.llm import LLMClient
 from judgecal.logjson import setup_logging
@@ -25,6 +29,7 @@ from judgecal.sut import (
     format_contexts,
     generate,
     load_eval_set,
+    load_prompt,
     reference_text,
 )
 
@@ -97,6 +102,61 @@ def run(
     )
 
 
+EXIT_DRIFT = 3
+log = logging.getLogger("judgecal.evalrun")
+
+
+def drift_check(record: dict[str, Any], prompt_path: Path) -> GateResult:
+    """Scheduled-run drift: the fresh scores vs the committed baseline (same checks as the release gate,
+    with the record's own prompt as the reference, so only yardstick changes and regressions count)."""
+    return gate_check(
+        record,
+        json.loads(BASELINE_PATH.read_text(encoding="utf-8")) if BASELINE_PATH.is_file() else None,
+        prompt_sha256=file_sha256(prompt_path),
+        eval_set_sha256=file_sha256(EVAL_SET_PATH),
+        eval_ids=[str(i["question_id"]) for i in load_eval_set()],
+        config=load_gate_config(),
+    )
+
+
+def preflight(prompt_path: Path = PROMPT_PATH) -> dict[str, Any]:
+    """`--smoke`: everything the scheduled job needs, without a single model call or write.
+
+    Config valid, prompt/eval set/baseline/gate config load, the release judge config equals the
+    baseline's (else every run would report drift), Postgres reachable with all migrations applied,
+    and the Groq key present unless the kill switch or recorded mode makes it unnecessary.
+    """
+    checks: dict[str, Any] = {}
+    s = get_settings()
+    checks["kill_switch_llm_calls_enabled"] = s.llm_calls_enabled
+    checks["recorded_mode"] = s.llm_recorded_mode
+    load_prompt(prompt_path)
+    items = load_eval_set()
+    checks["eval_items"] = len(items)
+    baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+    load_gate_config()
+    judge = release_judge(LLMClient(s.judge_provider))
+    checks["judge_config_matches_baseline"] = canonical_sha256(judge.config()) == baseline.get("judge_config_sha256")
+    checks["groq_key_present"] = bool(os.environ.get("GROQ_API_KEY"))
+    needs_key = s.llm_calls_enabled and not s.llm_recorded_mode
+    checks["database"] = False
+    if s.database_url:
+        from judgecal import db
+
+        with db.connect() as conn:
+            schema = db.schema_status(conn)
+        checks["database"] = True
+        checks["migrations_pending"] = schema["pending"]
+    ok = (
+        checks["judge_config_matches_baseline"]
+        and checks["database"]
+        and checks.get("migrations_pending") == []
+        and (checks["groq_key_present"] or not needs_key)
+        and len(items) > 0
+    )
+    return {"ok": bool(ok), "checks": checks}
+
+
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     ap = argparse.ArgumentParser(prog="judgecal-eval")
@@ -105,7 +165,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--store", action="store_true", help="also insert the run into Postgres (DATABASE_URL)")
     ap.add_argument("--gen-only", action="store_true", help="only generate (and cache) the SUT answers")
+    ap.add_argument("--smoke", action="store_true", help="preflight only: no model calls, no writes")
+    ap.add_argument("--fail-on-drift", action="store_true", help=f"exit {EXIT_DRIFT} if the gate check fails")
     args = ap.parse_args(argv)
+    if args.smoke:
+        res = preflight(args.prompt)
+        log.info("eval preflight", extra={"event": "eval_preflight", "ok": res["ok"], "checks": res["checks"]})
+        print(json.dumps(res))
+        return 0 if res["ok"] else 1
     if args.gen_only:
         s = get_settings()
         client = LLMClient(s.sut_provider, max_wait_s=120)
@@ -113,23 +180,52 @@ def main(argv: list[str] | None = None) -> int:
             answer, _ = generate(client, s.sut_model, it, args.prompt)
             print(f"{it['question_id']}: {answer[:80]!r}", flush=True)
         return 0
-    record = run(args.prompt, limit=args.limit)
+    try:
+        record = run(args.prompt, limit=args.limit)
+    except Exception as exc:
+        # One structured event per failed run (log-based metric + alert); the exception still fails the job.
+        log.error("eval run failed", extra={"event": "eval_run_failed", "error_type": type(exc).__name__})
+        raise
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "history").mkdir(exist_ok=True)
     body = json.dumps(record, indent=1, ensure_ascii=False) + "\n"
     (args.out / "latest.json").write_text(body, encoding="utf-8", newline="\n")
     stamp = record["created_at"].replace(":", "").replace("-", "")
     (args.out / "history" / f"{stamp}_{record['run_id'][:8]}.json").write_text(body, encoding="utf-8", newline="\n")
+    kind = "smoke" if get_settings().llm_recorded_mode else "release_gate"
     if args.store:
         from judgecal import db
 
         with db.connect() as conn:
-            db.insert_run(conn, record, kind="release_gate")
+            db.insert_run(conn, record, kind=kind)
+    verdict = drift_check(record, args.prompt) if not args.limit else None
+    if verdict is not None:
+        extra = {
+            "event": "eval_gate" if verdict.ok else "eval_gate_drift",
+            "ok": verdict.ok,
+            "run_id": record["run_id"],
+            "kind": kind,
+            "deltas_normalized": verdict.deltas,
+            "failures": verdict.failures,
+        }
+        (log.info if verdict.ok else log.error)("eval gate verdict", extra=extra)
     print(
         json.dumps(
-            {"summary": record["summary"], "usd": record["usd"], "prompt_sha256": record["prompt_sha256"]}, indent=1
+            {
+                "run_id": record["run_id"],
+                "kind": kind,
+                "stored": args.store,
+                "summary": record["summary"],
+                "usd": record["usd"],
+                "prompt_sha256": record["prompt_sha256"],
+                "gate_ok": None if verdict is None else verdict.ok,
+                "gate_failures": [] if verdict is None else verdict.failures,
+            },
+            indent=1,
         )
     )
+    if verdict is not None and not verdict.ok and args.fail_on_drift:
+        return EXIT_DRIFT
     return 0
 
 

@@ -1,0 +1,149 @@
+{
+  "target": "http://127.0.0.1:8504",
+  "started_at": "2026-10-19T06:32:20Z",
+  "duration_s": 18.7,
+  "passed": 22,
+  "failed": 0,
+  "skipped": 0,
+  "total": 22,
+  "ok": true,
+  "mode": {
+    "compose": true,
+    "gate_cli": true,
+    "read_only": false
+  },
+  "checks": [
+    {
+      "check": "liveness",
+      "status": "PASS",
+      "ms": 33,
+      "detail": "200 ok"
+    },
+    {
+      "check": "readiness",
+      "status": "PASS",
+      "ms": 18,
+      "detail": "postgres reachable, 0 pending migrations"
+    },
+    {
+      "check": "streamlit_health",
+      "status": "PASS",
+      "ms": 5,
+      "detail": "200 ok"
+    },
+    {
+      "check": "streamlit_app_page",
+      "status": "PASS",
+      "ms": 11,
+      "detail": "/ and /label serve the Streamlit app shell"
+    },
+    {
+      "check": "security_headers",
+      "status": "PASS",
+      "ms": 36,
+      "detail": "nosniff, DENY, CSP, no-referrer, no server banner"
+    },
+    {
+      "check": "auth_rejected_without_or_with_wrong_key",
+      "status": "PASS",
+      "ms": 10,
+      "detail": "no key 401, wrong key 401"
+    },
+    {
+      "check": "auth_accepted_with_key",
+      "status": "PASS",
+      "ms": 18,
+      "detail": "200 (env=dev)"
+    },
+    {
+      "check": "kill_switch_ui_never_calls_llm",
+      "status": "PASS",
+      "ms": 0,
+      "detail": "UI LLM kill switch on; label writes enabled"
+    },
+    {
+      "check": "labeling_queue_lists_items_from_postgres",
+      "status": "PASS",
+      "ms": 23,
+      "detail": "5 items, first p1-q001-hybrid"
+    },
+    {
+      "check": "input_validation_422",
+      "status": "PASS",
+      "ms": 58,
+      "detail": "4 bad bodies 422, human labeler 403, bad query 422"
+    },
+    {
+      "check": "oversize_body_413",
+      "status": "PASS",
+      "ms": 28,
+      "detail": "70 KB body 413"
+    },
+    {
+      "check": "errors_without_stack_traces",
+      "status": "PASS",
+      "ms": 24,
+      "detail": "422/404 JSON bodies, no traces or driver errors"
+    },
+    {
+      "check": "label_write_read_roundtrip",
+      "status": "PASS",
+      "ms": 81,
+      "detail": "wrote+read p1-q001-hybrid scores={'correctness': 0, 'completeness': 3, 'coherence': 2, 'groundedness': 4, 'safety': 0}; item left smoke-probe's queue"
+    },
+    {
+      "check": "eval_runs_listed",
+      "status": "PASS",
+      "ms": 22,
+      "detail": "200 list; bad kind 422"
+    },
+    {
+      "check": "migrations_idempotent",
+      "status": "PASS",
+      "ms": 3481,
+      "detail": "2 re-runs applied nothing; versions ['0001', '0002']"
+    },
+    {
+      "check": "eval_job_preflight",
+      "status": "PASS",
+      "ms": 3175,
+      "detail": "ok; checks={'kill_switch_llm_calls_enabled': True, 'recorded_mode': True, 'eval_items': 8, 'judge_config_matches_baseline': True, 'groq_key_present': False, 'database': True, 'migrations_pending': []}"
+    },
+    {
+      "check": "eval_job_recorded_run_stored_gate_ok",
+      "status": "PASS",
+      "ms": 2864,
+      "detail": "8 items replayed ($0), gate ok, stored run 870add32"
+    },
+    {
+      "check": "eval_job_drift_detected",
+      "status": "PASS",
+      "ms": 2974,
+      "detail": "drift exit 3 + eval_gate_drift event; 2 regressions"
+    },
+    {
+      "check": "kill_switch_eval_job_refuses_llm",
+      "status": "PASS",
+      "ms": 2686,
+      "detail": "refused before any model call (exit 1), eval_run_failed logged"
+    },
+    {
+      "check": "gate_cli_passes_baseline",
+      "status": "PASS",
+      "ms": 574,
+      "detail": "exit 0, ok"
+    },
+    {
+      "check": "gate_cli_fails_regressed_record",
+      "status": "PASS",
+      "ms": 442,
+      "detail": "exit 1; 2 regressions (correctness, groundedness)"
+    },
+    {
+      "check": "rate_limit_429_retry_after",
+      "status": "PASS",
+      "ms": 2131,
+      "detail": "120/150 got 429, Retry-After=1s, recovered"
+    }
+  ]
+}
