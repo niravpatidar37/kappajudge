@@ -16,26 +16,28 @@ Thanks for your interest. This is a small portfolio project; issues and focused 
 
 ## Branch protection and CI on this repository
 
-`main` is protected against force pushes and deletion (owner not locked out: `enforce_admins` off).
-Required status checks are **not** enabled yet: GitHub Actions on this repository currently creates no
-runs for `push` or `pull_request` events (only `workflow_dispatch` works), so a required check would never
-report and every merge would be blocked. Until that is fixed, verify a branch by dispatching CI on it and
-link the green run in the PR:
+`main` is protected: the ten CI jobs (`lint-type-test`, `release-gate`, `live-gate`, `security`, `docker`,
+`smoke`, `integration`, `terraform`, `tflint`, `iac-scan`) are required and the branch must be up to date;
+force pushes and deletion are blocked; `enforce_admins` is off so the owner is never locked out.
+
+For a while GitHub Actions created no runs for `push`/`pull_request` events on this repository (only
+`workflow_dispatch` worked; four old dispatch runs are still stuck `queued`). Both triggers worked again
+on 2026-10-19 (PR #2). If they break again, a required check never reports and merges block: verify the
+branch with a dispatched run, link it in the PR, and either merge as admin or drop the required checks
+temporarily:
 
 ```bash
 gh workflow run ci -R niravpatidar37/kappajudge --ref <branch>
 gh run list -R niravpatidar37/kappajudge -w ci -b <branch> -L 1
-```
-
-When `push`/`pull_request` runs appear again, require the CI jobs (exact job names) with:
-
-```bash
-gh api -X PUT repos/niravpatidar37/kappajudge/branches/main/protection --input - <<'JSON'
-{"required_status_checks": {"strict": true, "contexts": ["lint-type-test", "release-gate", "live-gate",
-  "security", "docker", "smoke", "integration", "terraform", "tflint", "iac-scan"]},
- "enforce_admins": false, "required_pull_request_reviews": null, "restrictions": null,
- "allow_force_pushes": false, "allow_deletions": false}
+# temporary: keep force-push/deletion protection, drop the required checks
+gh api -X DELETE repos/niravpatidar37/kappajudge/branches/main/protection/required_status_checks
+# restore (exact job names, GitHub Actions app id 15368)
+gh api -X PATCH repos/niravpatidar37/kappajudge/branches/main/protection/required_status_checks --input - <<'JSON'
+{"strict": true, "checks": [{"context": "lint-type-test", "app_id": 15368}, {"context": "release-gate", "app_id": 15368},
+  {"context": "live-gate", "app_id": 15368}, {"context": "security", "app_id": 15368}, {"context": "docker", "app_id": 15368},
+  {"context": "smoke", "app_id": 15368}, {"context": "integration", "app_id": 15368}, {"context": "terraform", "app_id": 15368},
+  {"context": "tflint", "app_id": 15368}, {"context": "iac-scan", "app_id": 15368}]}
 JSON
 ```
 
-Security issues: see [SECURITY.md](SECURITY.md), not the public issue tracker.
+The open demo PR #1 is meant to stay blocked: its `release-gate` fails by design.
