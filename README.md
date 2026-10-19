@@ -191,7 +191,7 @@ HelpSteer2 items.
 
 ### Cost
 
-LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-19T06:32:55Z. Groq calls are priced at Groq's published paid rates
+LLM spend for this project: **$0.4560** across 490 paid calls (qwen3.8-27b $0.4035, gpt-oss-20b $0.0525), read from the shared ledger at 2026-10-19T06:45:43Z. Groq calls are priced at Groq's published paid rates
 (`src/judgecal/pricing.json`, an estimate to verify) although the key is free tier. Monthly cloud cost
 estimate: `docs/SLO.md`.
 
@@ -378,7 +378,7 @@ in the CI `smoke` job and after every staging and prod-canary rollout in `deploy
 | Supply chain: Dependabot (actions, docker, compose, uv, terraform), CycloneDX SBOM artifact, keyless cosign sign + verify | done; signing/verify run only once GCP is connected |
 | Kill switches: model calls (eval job), label writes (UI + API) | done |
 | Uptime check passing through IAP with the Monitoring agent's OIDC token | **unverified** until the first apply (RUNBOOK) |
-| Required status checks in branch protection | **human**: GitHub currently creates no `push`/`pull_request` runs on this repo, so requiring checks would block merges ([CONTRIBUTING.md](CONTRIBUTING.md)) |
+| Branch protection on `main`: 10 required CI checks, up to date, no force push/deletion | done ([CONTRIBUTING.md](CONTRIBUTING.md) has the fallback if Actions stops triggering on `push`/`pull_request` again) |
 | Real deployment, on-call rota, load test, human labels | **not done / human** |
 
 ## Deployment

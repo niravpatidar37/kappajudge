@@ -307,7 +307,7 @@ in the CI `smoke` job and after every staging and prod-canary rollout in `deploy
 | Supply chain: Dependabot (actions, docker, compose, uv, terraform), CycloneDX SBOM artifact, keyless cosign sign + verify | done; signing/verify run only once GCP is connected |
 | Kill switches: model calls (eval job), label writes (UI + API) | done |
 | Uptime check passing through IAP with the Monitoring agent's OIDC token | **unverified** until the first apply (RUNBOOK) |
-| Required status checks in branch protection | **human**: GitHub currently creates no `push`/`pull_request` runs on this repo, so requiring checks would block merges ([CONTRIBUTING.md](CONTRIBUTING.md)) |
+| Branch protection on `main`: 10 required CI checks, up to date, no force push/deletion | done ([CONTRIBUTING.md](CONTRIBUTING.md) has the fallback if Actions stops triggering on `push`/`pull_request` again) |
 | Real deployment, on-call rota, load test, human labels | **not done / human** |
 
 ## Deployment
