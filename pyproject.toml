@@ -6,25 +6,25 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "httpx>=0.27",
-  "pydantic>=2.8",
+  "pydantic>=2.14.3",
   "python-dotenv>=1.0",
-  "portalocker>=2.10",
+  "portalocker>=4.4.2",
   "psycopg[binary]>=3.2",
   "numpy>=1.26",
   "scipy>=1.13",
   "scikit-learn>=1.5",
-  "pandas>=2.2",
-  "pyarrow>=17",
+  "pandas>=3.1.1",
+  "pyarrow>=26.0.1",
   "matplotlib>=3.9",
-  "streamlit>=1.39",
-  "deepeval>=3.0",
+  "streamlit>=1.67.0",
+  "deepeval>=4.3.3",
 ]
 
 [dependency-groups]
 dev = [
-  "pytest>=8.3",
-  "ruff>=0.7",
-  "mypy>=1.13",
+  "pytest>=9.2.0",
+  "ruff>=0.17.4",
+  "mypy>=2.4.1",
   "pandas-stubs",
   "types-requests",
   "bandit>=1.7.10",
